@@ -13,8 +13,9 @@ DaleStudy 조직의 GitHub App(https://github.com/apps/dalestudy)
 Fork PR에서도 작동하도록 GitHub Projects v2의 Week 필드를 조회하고, Week 설정이 누락된 PR에 자동으로 경고 댓글을 작성하며, Week 설정이 완료되면 경고 댓글을 자동으로 삭제한다.
 
 - **대상 Repository**: https://github.com/DaleStudy/leetcode-study
-- **엔드포인트**: `POST /check-weeks`
-- **트리거**: GitHub Actions (매일 오전 10시, 오후 6시 KST)
+- **트리거 방식**:
+  - **실시간**: GitHub Organization Webhook (`projects_v2_item`, `pull_request` 이벤트)
+  - **수동**: `POST /check-weeks` 엔드포인트 직접 호출
 
 ### 기술 스택
 
@@ -32,10 +33,12 @@ Fork PR에서도 작동하도록 GitHub Projects v2의 Week 필드를 조회하�
 ├── .env               # 로컬 환경 변수 (커밋 제외)
 ├── .gitignore         # Git 제외 파일
 ├── handlers/          # 기능별 핸들러
-│   └── check-weeks.js # PR Week 설정 검사
+│   ├── check-weeks.js # PR Week 설정 검사 (수동 호출용)
+│   └── webhooks.js    # GitHub webhook 이벤트 처리
 ├── utils/             # 공통 유틸리티
 │   ├── cors.js        # CORS 헤더 및 응답 유틸리티
-│   └── github.js      # GitHub 인증 및 API 유틸리티
+│   ├── github.js      # GitHub 인증 및 API 유틸리티
+│   └── webhook.js     # Webhook signature 검증
 ├── README.md          # 프로젝트 설명
 ├── DEPLOYMENT.md      # 배포 가이드
 ├── AGENTS.md          # 이 파일 (AI 에이전트 가이드)
@@ -135,9 +138,16 @@ curl -X POST https://github.dalestudy.com/check-weeks \
 
 현재 구현된 엔드포인트:
 
+#### `POST /webhooks`
+
+GitHub Organization webhook 수신용 엔드포인트
+
+- **이벤트**: `projects_v2_item`, `pull_request`
+- **실시간 처리**: Week 설정 변경 즉시 감지 및 댓글 작성/삭제
+
 #### `POST /check-weeks`
 
-모든 Open PR에서 Week 설정을 검사하고 자동으로 댓글 작성/삭제
+모든 Open PR에서 Week 설정을 검사하고 자동으로 댓글 작성/삭제 (수동 호출용)
 
 **Request:**
 
@@ -218,22 +228,46 @@ wrangler deploy
 
 자세한 배포 가이드는 `DEPLOYMENT.md` 참고.
 
-## GitHub Actions 통합
+## GitHub Organization Webhook 설정
 
-**Repository**: https://github.com/DaleStudy/leetcode-study
+### 1. Webhook URL 등록
 
-**Workflow**: `.github/workflows/check-prs.yaml`
+**Organization Settings** → **Webhooks** → **Add webhook**
 
-- Schedule: 매일 오전 10시, 오후 6시 (KST)
-- Manual trigger: `workflow_dispatch`
-- Worker URL: `https://github.dalestudy.com/check-weeks`
+- **Payload URL**: `https://github.dalestudy.com/webhooks`
+- **Content type**: `application/json`
+- **Secret**: 안전한 랜덤 문자열 (Worker secrets에도 동일하게 설정)
 
-```yaml
-- name: Check PR weeks via Worker
-  run: |
-    curl -X POST https://github.dalestudy.com/check-weeks \
-      -H "Content-Type: application/json" \
-      -d '{"repo_owner": "DaleStudy", "repo_name": "leetcode-study"}'
+### 2. 이벤트 구독
+
+**Which events would you like to trigger this webhook?**
+- ☑️ **Projects v2 items** (`projects_v2_item` 이벤트)
+- ☑️ **Pull requests** (`pull_request` 이벤트)
+
+### 3. Worker Secrets 설정
+
+```bash
+wrangler secret put WEBHOOK_SECRET
+# 프롬프트에서 GitHub webhook secret 입력
+```
+
+### 4. GitHub App 권한 확인
+
+**Organization Settings** → **GitHub Apps** → **DaleStudy App**
+
+필수 권한:
+- **Organization projects**: Read & Write
+- **Pull requests**: Read
+- **Issues**: Read & Write (댓글 작성/삭제)
+
+## 수동 호출 (선택사항)
+
+전체 PR을 한 번에 검사하고 싶을 때:
+
+```bash
+curl -X POST https://github.dalestudy.com/check-weeks \
+  -H "Content-Type: application/json" \
+  -d '{"repo_owner": "DaleStudy", "repo_name": "leetcode-study"}'
 ```
 
 ## 중요한 제약사항

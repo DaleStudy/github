@@ -12,13 +12,13 @@ DaleStudy 조직의 여러 repository에서 반복적인 작업들을 자동화�
 
 Fork PR에서도 작동하도록 GitHub Projects v2의 Week 필드를 조회하고, Week 설정이 누락된 PR에 자동으로 경고 댓글을 작성합니다.
 
-**왜 필요한가?**
-
-- GitHub Actions의 `GITHUB_TOKEN`은 Organization Projects v2에 접근 불가
-- Fork PR은 Repository Secrets 접근 불가
-- Cloudflare Worker를 Public API로 사용하여 이 문제 해결
+**트리거 방식:**
+- **실시간**: GitHub Organization Webhook (Week 설정 변경 즉시 반응)
+- **수동**: REST API 직접 호출
 
 **대상**: https://github.com/DaleStudy/leetcode-study
+
+**설정 가이드**: `AGENTS.md`의 "GitHub Organization Webhook 설정" 섹션 참고
 
 ## 향후 확장 계획
 

@@ -5,7 +5,9 @@
  */
 
 import { checkWeeks } from "./handlers/check-weeks.js";
-import { preflightResponse, corsResponse } from "./utils/cors.js";
+import { handleWebhook } from "./handlers/webhooks.js";
+import { preflightResponse, corsResponse, errorResponse } from "./utils/cors.js";
+import { verifyWebhookSignature } from "./utils/webhook.js";
 
 export default {
   async fetch(request, env) {
@@ -20,7 +22,37 @@ export default {
 
     const url = new URL(request.url);
 
-    // PR Week 설정 검사
+    // GitHub Webhook 수신
+    if (url.pathname === "/webhooks") {
+      // Webhook signature 검증
+      const signature = request.headers.get("X-Hub-Signature-256");
+      const rawBody = await request.text();
+
+      // Secret이 설정되어 있으면 검증
+      if (env.WEBHOOK_SECRET) {
+        const isValid = await verifyWebhookSignature(
+          rawBody,
+          signature,
+          env.WEBHOOK_SECRET
+        );
+
+        if (!isValid) {
+          console.error("Invalid webhook signature");
+          return errorResponse("Invalid signature", 401);
+        }
+      }
+
+      // Request 객체 재생성 (body를 다시 읽을 수 있도록)
+      const newRequest = new Request(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: rawBody,
+      });
+
+      return handleWebhook(newRequest, env);
+    }
+
+    // PR Week 설정 검사 (수동 호출용)
     if (url.pathname === "/check-weeks") {
       return checkWeeks(request, env);
     }
