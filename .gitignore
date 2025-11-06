@@ -1,0 +1,12 @@
+# Wrangler
+.wrangler/
+dist/
+node_modules/
+
+# Secrets
+.env
+*.pem
+*.key
+
+# OS
+.DS_Store
