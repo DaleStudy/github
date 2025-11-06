@@ -1,8 +1,6 @@
-# DaleStudy GitHub App - Cloudflare Worker
+# DaleStudy GitHub App
 
-DaleStudy 조직의 자동화 작업을 처리하는 GitHub App (Cloudflare Workers 기반)
-
-**GitHub App**: https://github.com/organizations/DaleStudy/settings/apps/dalestudy
+DaleStudy 조직의 자동화 작업을 처리하는 GitHub App (https://github.com/apps/dalestudy)
 
 ## 프로젝트 비전
 
@@ -64,6 +62,7 @@ wrangler deploy
 ```
 
 배포 완료 후 URL이 표시됩니다:
+
 ```
 https://dalestudy-week-checker.your-subdomain.workers.dev
 ```
@@ -139,6 +138,7 @@ wrangler tail
 ## 비용
 
 Cloudflare Workers 무료 티어:
+
 - 100,000 requests/day
 - 10ms CPU time per request
 
@@ -161,6 +161,7 @@ Cloudflare Workers 무료 티어:
 ### Worker가 401 에러 반환
 
 GitHub App credentials 확인:
+
 ```bash
 wrangler secret list
 ```
