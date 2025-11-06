@@ -31,6 +31,13 @@ export async function handleWebhook(request, env) {
       return corsResponse({ message: "Ignored: not DaleStudy organization" });
     }
 
+    // 특정 repository만 허용 (leetcode-study)
+    const repoName = payload.repository?.name;
+    if (repoName && repoName !== "leetcode-study") {
+      console.log(`Ignoring event from repository: ${repoName}`);
+      return corsResponse({ message: `Ignored: ${repoName}` });
+    }
+
     // 이벤트 타입별 처리
     switch (eventType) {
       case "projects_v2_item":
