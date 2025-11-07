@@ -2,7 +2,7 @@
  * PR Week 설정 관련 유틸리티
  */
 
-import { generateGitHubAppToken } from "./github.js";
+import { generateGitHubAppToken, getGitHubHeaders } from "./github.js";
 
 /**
  * PR의 Week 값 조회 (GraphQL)
@@ -36,11 +36,7 @@ export async function getWeekValue(repoOwner, repoName, prNumber, appToken) {
 
   const response = await fetch("https://api.github.com/graphql", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${appToken}`,
-      "Content-Type": "application/json",
-      "User-Agent": "DaleStudy-GitHub-App",
-    },
+    headers: { ...getGitHubHeaders(appToken), "Content-Type": "application/json" },
     body: JSON.stringify({ query: weekQuery }),
   });
 
@@ -98,13 +94,7 @@ export async function ensureWarningComment(repoOwner, repoName, prNumber, env) {
   // 기존 경고 댓글 확인
   const commentsResponse = await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/issues/${prNumber}/comments`,
-    {
-      headers: {
-        Authorization: `Bearer ${appToken}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "DaleStudy-GitHub-App",
-      },
-    }
+    { headers: getGitHubHeaders(appToken) }
   );
 
   if (commentsResponse.ok) {
@@ -122,12 +112,7 @@ export async function ensureWarningComment(repoOwner, repoName, prNumber, env) {
     `https://api.github.com/repos/${repoOwner}/${repoName}/issues/${prNumber}/comments`,
     {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${appToken}`,
-        Accept: "application/vnd.github+json",
-        "Content-Type": "application/json",
-        "User-Agent": "DaleStudy-GitHub-App",
-      },
+      headers: { ...getGitHubHeaders(appToken), "Content-Type": "application/json" },
       body: JSON.stringify({ body: WARNING_COMMENT_BODY }),
     }
   );
@@ -150,13 +135,7 @@ export async function removeWarningComment(repoOwner, repoName, prNumber, env) {
 
   const commentsResponse = await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/issues/${prNumber}/comments`,
-    {
-      headers: {
-        Authorization: `Bearer ${appToken}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "DaleStudy-GitHub-App",
-      },
-    }
+    { headers: getGitHubHeaders(appToken) }
   );
 
   if (!commentsResponse.ok) {
@@ -174,11 +153,7 @@ export async function removeWarningComment(repoOwner, repoName, prNumber, env) {
     `https://api.github.com/repos/${repoOwner}/${repoName}/issues/comments/${warningComment.id}`,
     {
       method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${appToken}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "DaleStudy-GitHub-App",
-      },
+      headers: getGitHubHeaders(appToken),
     }
   );
 
@@ -189,4 +164,21 @@ export async function removeWarningComment(repoOwner, repoName, prNumber, env) {
     console.error(`Failed to delete comment on PR #${prNumber}`);
     return false;
   }
+}
+
+/**
+ * Week 값을 확인하고 자동으로 댓글 작성/삭제
+ *
+ * @returns {Promise<string|null>} Week 값 또는 null
+ */
+export async function handleWeekComment(repoOwner, repoName, prNumber, env, appToken) {
+  const weekValue = await getWeekValue(repoOwner, repoName, prNumber, appToken);
+
+  if (!weekValue) {
+    await ensureWarningComment(repoOwner, repoName, prNumber, env);
+  } else {
+    await removeWarningComment(repoOwner, repoName, prNumber, env);
+  }
+
+  return weekValue;
 }

@@ -2,13 +2,11 @@
  * 리트코드 스터디 자동화 핸들러
  */
 
-import { generateGitHubAppToken } from "../utils/github.js";
+import { generateGitHubAppToken, getGitHubHeaders } from "../utils/github.js";
 import { corsResponse, errorResponse } from "../utils/cors.js";
-import {
-  getWeekValue,
-  ensureWarningComment,
-  removeWarningComment,
-} from "../utils/prWeeks.js";
+import { handleWeekComment } from "../utils/prWeeks.js";
+import { validateOrganization, hasMaintenanceLabel } from "../utils/validation.js";
+import { ALLOWED_ORG } from "../utils/constants.js";
 
 /**
  * 모든 Open PR의 Week 설정을 검사하고 자동으로 댓글 작성/삭제
@@ -30,8 +28,8 @@ export async function checkWeeks(request, env) {
     }
 
     // DaleStudy organization만 허용
-    if (repo_owner !== "DaleStudy") {
-      return errorResponse("Unauthorized organization", 403);
+    if (!validateOrganization(repo_owner)) {
+      return errorResponse(`Unauthorized organization: ${repo_owner}`, 403);
     }
 
     // GitHub App Token 생성
@@ -40,13 +38,7 @@ export async function checkWeeks(request, env) {
     // Open PR 목록 조회
     const prsResponse = await fetch(
       `https://api.github.com/repos/${repo_owner}/${repo_name}/pulls?state=open&per_page=100`,
-      {
-        headers: {
-          Authorization: `Bearer ${appToken}`,
-          Accept: "application/vnd.github+json",
-          "User-Agent": "DaleStudy-GitHub-App",
-        },
-      }
+      { headers: getGitHubHeaders(appToken) }
     );
 
     const prs = await prsResponse.json();
@@ -63,49 +55,29 @@ export async function checkWeeks(request, env) {
       const labels = pr.labels.map((l) => l.name);
 
       // maintenance 라벨이 있으면 스킵
-      if (labels.includes("maintenance")) {
+      if (hasMaintenanceLabel(labels)) {
         console.log(`Skipping PR #${prNumber}: has maintenance label`);
         continue;
       }
 
       checkedCount++;
 
-      // Week 설정 확인
-      const weekValue = await getWeekValue(
+      // Week 값 확인 및 댓글 처리
+      const weekValue = await handleWeekComment(
         repo_owner,
         repo_name,
         prNumber,
+        env,
         appToken
       );
 
-      // Week 없으면 댓글 작성
       if (!weekValue) {
-        const commented = await ensureWarningComment(
-          repo_owner,
-          repo_name,
-          prNumber,
-          env
-        );
-
-        if (commented) {
-          commentedCount++;
-        }
-
-        results.push({ pr: prNumber, week: null, commented });
+        commentedCount++;
+        results.push({ pr: prNumber, week: null, commented: true });
       } else {
-        // Week 있으면 경고 댓글 삭제
-        const deleted = await removeWarningComment(
-          repo_owner,
-          repo_name,
-          prNumber,
-          env
-        );
-
-        if (deleted) {
-          deletedCount++;
-        }
-
-        results.push({ pr: prNumber, week: weekValue, commented: false, deleted });
+        // Week 있으면 경고 댓글이 삭제되었는지 확인할 수 없지만,
+        // handleWeekComment가 처리했으므로 deleted는 미포함
+        results.push({ pr: prNumber, week: weekValue, commented: false });
         console.log(`PR #${prNumber}: Week ${weekValue}`);
       }
     }

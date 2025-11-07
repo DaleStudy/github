@@ -2,20 +2,22 @@
  * GitHub Webhook 이벤트 핸들러
  */
 
-import { generateGitHubAppToken } from "../utils/github.js";
+import { generateGitHubAppToken, getGitHubHeaders } from "../utils/github.js";
 import { corsResponse, errorResponse } from "../utils/cors.js";
 import {
-  getWeekValue,
   ensureWarningComment,
   removeWarningComment,
+  handleWeekComment,
 } from "../utils/prWeeks.js";
+import {
+  validateOrganization,
+  hasMaintenanceLabel,
+  isClosedPR,
+} from "../utils/validation.js";
+import { ALLOWED_REPO } from "../utils/constants.js";
 
 /**
  * GitHub webhook 이벤트 처리
- *
- * @param {Request} request - Cloudflare Worker request
- * @param {Object} env - Environment variables
- * @returns {Response} CORS가 포함된 JSON 응답
  */
 export async function handleWebhook(request, env) {
   try {
@@ -26,14 +28,14 @@ export async function handleWebhook(request, env) {
 
     // DaleStudy organization만 허용
     const orgLogin = payload.organization?.login;
-    if (orgLogin !== "DaleStudy") {
+    if (!validateOrganization(orgLogin)) {
       console.log(`Ignoring event from organization: ${orgLogin}`);
       return corsResponse({ message: "Ignored: not DaleStudy organization" });
     }
 
     // 특정 repository만 허용 (leetcode-study)
     const repoName = payload.repository?.name;
-    if (repoName && repoName !== "leetcode-study") {
+    if (repoName && repoName !== ALLOWED_REPO) {
       console.log(`Ignoring event from repository: ${repoName}`);
       return corsResponse({ message: `Ignored: ${repoName}` });
     }
@@ -77,9 +79,7 @@ async function handleProjectsV2ItemEvent(payload, env) {
 
   // deleted 액션은 항상 처리 (프로젝트에서 제거 = Week 설정 불가능)
   // created 액션도 항상 처리 (프로젝트 추가 시 Week 누락 체크)
-  if (action === "deleted" || action === "created") {
-    // PR 정보 추출 및 처리로 이동
-  } else {
+  if (action !== "deleted" && action !== "created") {
     // edited 액션은 Week 필드 변경인지 확인
     const changes = payload.changes;
     const isWeekField =
@@ -100,7 +100,6 @@ async function handleProjectsV2ItemEvent(payload, env) {
   }
 
   // PR URL에서 repo와 PR number 추출
-  // URL 형식: https://api.github.com/repos/DaleStudy/leetcode-study/pulls/1970
   const matches = prUrl.match(
     /https:\/\/api\.github\.com\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)/
   );
@@ -111,31 +110,25 @@ async function handleProjectsV2ItemEvent(payload, env) {
 
   const [, repoOwner, repoName, prNumber] = matches;
 
-  // PR 상태 확인 (closed PR은 예외)
+  // PR 상태 확인 (closed PR, maintenance 라벨 예외)
   const appToken = await generateGitHubAppToken(env);
   const prResponse = await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}`,
-    {
-      headers: {
-        Authorization: `Bearer ${appToken}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "DaleStudy-GitHub-App",
-      },
-    }
+    { headers: getGitHubHeaders(appToken) }
   );
 
   if (prResponse.ok) {
     const prData = await prResponse.json();
 
     // Closed PR 체크
-    if (prData.state === "closed") {
+    if (isClosedPR(prData.state)) {
       console.log(`Skipping closed PR #${prNumber}`);
       return corsResponse({ message: "Ignored: closed PR" });
     }
 
     // maintenance 라벨 체크
-    const labels = prData.labels.map(l => l.name);
-    if (labels.includes("maintenance")) {
+    const labels = prData.labels.map((l) => l.name);
+    if (hasMaintenanceLabel(labels)) {
       console.log(`Skipping PR #${prNumber}: has maintenance label`);
       return corsResponse({ message: "Ignored: maintenance label" });
     }
@@ -158,17 +151,15 @@ async function handleProjectsV2ItemEvent(payload, env) {
   if (action === "created") {
     console.log(`PR #${prNumber} added to project`);
 
-    // Week 값 조회 (GraphQL) - appToken은 위에서 이미 생성됨
-    const weekValue = await getWeekValue(repoOwner, repoName, prNumber, appToken);
+    const weekValue = await handleWeekComment(
+      repoOwner,
+      repoName,
+      prNumber,
+      env,
+      appToken
+    );
 
     console.log(`Week value after project add: ${weekValue || "not set"}`);
-
-    // Week 설정 여부에 따라 댓글 작성/삭제
-    if (!weekValue) {
-      await ensureWarningComment(repoOwner, repoName, prNumber, env);
-    } else {
-      await removeWarningComment(repoOwner, repoName, prNumber, env);
-    }
 
     return corsResponse({
       message: "Processed",
@@ -218,7 +209,7 @@ async function handlePullRequestEvent(payload, env) {
 
   // maintenance 라벨 체크
   const labels = pr.labels.map((l) => l.name);
-  if (labels.includes("maintenance")) {
+  if (hasMaintenanceLabel(labels)) {
     console.log(`Skipping PR #${prNumber}: has maintenance label`);
     return corsResponse({ message: "Ignored: maintenance label" });
   }
@@ -230,13 +221,13 @@ async function handlePullRequestEvent(payload, env) {
   await new Promise((resolve) => setTimeout(resolve, 3000));
 
   const appToken = await generateGitHubAppToken(env);
-  const weekValue = await getWeekValue(repoOwner, repoName, prNumber, appToken);
-
-  if (!weekValue) {
-    await ensureWarningComment(repoOwner, repoName, prNumber, env);
-  } else {
-    await removeWarningComment(repoOwner, repoName, prNumber, env);
-  }
+  const weekValue = await handleWeekComment(
+    repoOwner,
+    repoName,
+    prNumber,
+    env,
+    appToken
+  );
 
   return corsResponse({
     message: "Processed",

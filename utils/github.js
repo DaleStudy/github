@@ -2,6 +2,19 @@
  * GitHub App 인증 및 API 유틸리티
  */
 
+import { GITHUB_USER_AGENT, GITHUB_ACCEPT_HEADER } from "./constants.js";
+
+/**
+ * GitHub API 요청 헤더 생성
+ */
+export function getGitHubHeaders(token) {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: GITHUB_ACCEPT_HEADER,
+    "User-Agent": GITHUB_USER_AGENT,
+  };
+}
+
 /**
  * GitHub App Installation Token 발급
  */
