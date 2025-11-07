@@ -50,10 +50,7 @@ async function postReviewComment(
 ) {
   const commentBody = `## 🤖 AI Code Review
 
-${reviewContent}
-
----
-*Powered by GPT-4.1-nano*`;
+${reviewContent}`;
 
   await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/issues/${prNumber}/comments`,
