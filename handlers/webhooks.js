@@ -111,6 +111,36 @@ async function handleProjectsV2ItemEvent(payload, env) {
 
   const [, repoOwner, repoName, prNumber] = matches;
 
+  // PR 상태 확인 (closed PR은 예외)
+  const appToken = await generateGitHubAppToken(env);
+  const prResponse = await fetch(
+    `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}`,
+    {
+      headers: {
+        Authorization: `Bearer ${appToken}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "DaleStudy-GitHub-App",
+      },
+    }
+  );
+
+  if (prResponse.ok) {
+    const prData = await prResponse.json();
+
+    // Closed PR 체크
+    if (prData.state === "closed") {
+      console.log(`Skipping closed PR #${prNumber}`);
+      return corsResponse({ message: "Ignored: closed PR" });
+    }
+
+    // maintenance 라벨 체크
+    const labels = prData.labels.map(l => l.name);
+    if (labels.includes("maintenance")) {
+      console.log(`Skipping PR #${prNumber}: has maintenance label`);
+      return corsResponse({ message: "Ignored: maintenance label" });
+    }
+  }
+
   // deleted 액션은 Week 설정 불가능하므로 경고 댓글 작성
   if (action === "deleted") {
     console.log(`Project removed from PR #${prNumber}`);
@@ -128,8 +158,7 @@ async function handleProjectsV2ItemEvent(payload, env) {
   if (action === "created") {
     console.log(`PR #${prNumber} added to project`);
 
-    // Week 값 조회 (GraphQL)
-    const appToken = await generateGitHubAppToken(env);
+    // Week 값 조회 (GraphQL) - appToken은 위에서 이미 생성됨
     const weekValue = await getWeekValue(repoOwner, repoName, prNumber, appToken);
 
     console.log(`Week value after project add: ${weekValue || "not set"}`);
