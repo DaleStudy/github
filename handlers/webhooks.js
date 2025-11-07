@@ -173,8 +173,8 @@ async function handleProjectsV2ItemEvent(payload, env) {
     });
   }
 
-  // edited 액션은 payload에서 Week 값 확인
-  const weekValue = payload.projects_v2_item?.field_value?.text || null;
+  // edited 액션은 payload의 changes에서 Week 값 확인
+  const weekValue = payload.changes?.field_value?.to?.title || null;
 
   console.log(
     `Week ${action} for PR #${prNumber}: ${weekValue || "removed"}`
