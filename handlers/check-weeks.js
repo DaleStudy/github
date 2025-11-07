@@ -6,7 +6,6 @@ import { generateGitHubAppToken, getGitHubHeaders } from "../utils/github.js";
 import { corsResponse, errorResponse } from "../utils/cors.js";
 import { handleWeekComment } from "../utils/prWeeks.js";
 import { validateOrganization, hasMaintenanceLabel } from "../utils/validation.js";
-import { ALLOWED_ORG } from "../utils/constants.js";
 
 /**
  * 모든 Open PR의 Week 설정을 검사하고 자동으로 댓글 작성/삭제

@@ -70,6 +70,8 @@ async function handleProjectsV2ItemEvent(payload, env) {
     return corsResponse({ message: `Ignored: ${action}` });
   }
 
+  console.log(`Processing projects_v2_item action: ${action}`);
+
   // PR과 연결된 item인지 확인
   const contentType = payload.projects_v2_item?.content_type;
   if (contentType !== "PullRequest") {
@@ -201,6 +203,8 @@ async function handlePullRequestEvent(payload, env) {
     console.log(`Ignoring pull_request action: ${action}`);
     return corsResponse({ message: `Ignored: ${action}` });
   }
+
+  console.log(`Processing pull_request action: ${action}`);
 
   const pr = payload.pull_request;
   const repoOwner = payload.repository.owner.login;
