@@ -33,31 +33,35 @@ async function getPRDiff(repoOwner, repoName, prNumber, githubToken) {
 }
 
 /**
- * AI 코드 리뷰 댓글 작성
+ * AI 코드 리뷰 댓글 작성 (원본 댓글에 답변)
  *
  * @param {string} repoOwner - 저장소 소유자
  * @param {string} repoName - 저장소 이름
  * @param {number} prNumber - PR 번호
  * @param {string} reviewContent - 리뷰 내용 (마크다운)
  * @param {string} githubToken - GitHub 토큰
+ * @param {number} inReplyTo - 답변할 댓글 ID (선택사항)
  */
 async function postReviewComment(
   repoOwner,
   repoName,
   prNumber,
   reviewContent,
-  githubToken
+  githubToken,
+  inReplyTo = null
 ) {
-  const commentBody = `### 🤖 AI 코치 리뷰
+  const commentBody = `${reviewContent}`;
 
-${reviewContent}`;
+  const body = inReplyTo
+    ? { body: commentBody, in_reply_to: inReplyTo }
+    : { body: commentBody };
 
   await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/issues/${prNumber}/comments`,
     {
       method: "POST",
       headers: getGitHubHeaders(githubToken),
-      body: JSON.stringify({ body: commentBody }),
+      body: JSON.stringify(body),
     }
   );
 }
@@ -72,6 +76,7 @@ ${reviewContent}`;
  * @param {string} prBody - PR 본문
  * @param {string} githubToken - GitHub 토큰
  * @param {string} openaiApiKey - OpenAI API 키
+ * @param {number} commentId - 답변할 댓글 ID (선택사항)
  */
 export async function performAIReview(
   repoOwner,
@@ -80,7 +85,8 @@ export async function performAIReview(
   prTitle,
   prBody,
   githubToken,
-  openaiApiKey
+  openaiApiKey,
+  commentId = null
 ) {
   console.log(`Starting AI review for PR #${prNumber}`);
 
@@ -102,13 +108,14 @@ export async function performAIReview(
     openaiApiKey
   );
 
-  // 리뷰 댓글 작성
+  // 리뷰 댓글 작성 (원본 댓글에 답변)
   await postReviewComment(
     repoOwner,
     repoName,
     prNumber,
     reviewContent,
-    githubToken
+    githubToken,
+    commentId
   );
 
   console.log(`AI review posted for PR #${prNumber}`);

@@ -301,7 +301,8 @@ async function handleIssueCommentEvent(payload, env) {
       issue.title,
       issue.body,
       appToken,
-      env.OPENAI_API_KEY
+      env.OPENAI_API_KEY,
+      comment.id  // 원본 댓글 ID 전달
     );
 
     console.log(`AI review completed for PR #${prNumber}`);
