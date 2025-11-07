@@ -24,13 +24,6 @@ export async function generateCodeReview(
     ? `당신은 리트코드 스터디 그룹의 AI 코치입니다.
 사용자가 PR의 코드에 대해 구체적인 질문을 했습니다.
 PR의 코드 변경 사항을 참고하여 사용자의 질문에 명확하고 도움이 되는 답변을 제공하세요.
-
-답변 시:
-  •	사용자의 질문에 직접적으로 답변하세요
-  •	코드의 해당 부분을 구체적으로 언급하세요
-  •	필요하면 예시나 개선 방법을 제안하세요
-  •	격려와 학습이 되는 피드백을 함께 주세요
-
 300 글자를 초과하지 말아주세요.`
     : `당신은 리트코드 스터디 그룹의 AI 코치입니다.
 아래 코드 변경 사항을 리뷰하고 건설적인 피드백을 제공하세요.
@@ -40,29 +33,29 @@ PR의 코드 변경 사항을 참고하여 사용자의 질문에 명확하고 �
   •	시간/공간 복잡도 분석이 정확한지 평가
   •	더 나은 접근법이나 알고리즘이 있는지 제안
   •	코드의 가독성 및 스타일, 베스트 프랙티스 준수 여부
-	•	잠재적인 버그 또는 개선 가능성
+	•	불필요한 nickpick은 피하고, 꼭 필요한 피드백만 주세요.
 
 단순히 지적만 하지 말고, 격려와 학습이 되는 피드백을 함께 주세요.
 해당 사항없는 항목은 생략하고 자연스럽게 작성하세요.
-300 글자를 초과하지 말아주세요.
+500 글자를 초과하지 말아주세요.
 `;
 
-  let userPrompt = `# PR 제목
+  let userPrompt = `# PR Title
 ${prTitle}
 
-# PR 설명
-${prBody || "설명 없음"}
+# PR Description
+${prBody || "No description provided"}
 
-# 코드 변경사항
+# Code Changes
 \`\`\`diff
 ${prDiff}
 \`\`\`
 `;
 
   if (userRequest) {
-    userPrompt += `\n# 사용자 질문\n${userRequest}`;
+    userPrompt += `\n# User's Question\n${userRequest}`;
   } else {
-    userPrompt += `\n이 PR을 리뷰해주세요.`;
+    userPrompt += `\nPlease review this pull request.`;
   }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {

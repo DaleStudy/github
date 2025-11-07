@@ -19,7 +19,7 @@ import {
   isClosedPR,
 } from "../utils/validation.js";
 import { ALLOWED_REPO } from "../utils/constants.js";
-import { performAIReview } from "../utils/prReview.js";
+import { performAIReview, addReactionToComment } from "../utils/prReview.js";
 
 /**
  * GitHub webhook 이벤트 처리
@@ -250,6 +250,26 @@ async function handlePullRequestEvent(payload, env) {
 }
 
 /**
+ * 댓글에서 @dalestudy 멘션과 사용자 요청 추출
+ *
+ * @param {string} commentBody - 댓글 내용
+ * @returns {Object|null} { isMentioned, userRequest } 또는 null
+ */
+function extractMentionAndRequest(commentBody) {
+  const lowerBody = commentBody.toLowerCase();
+  const isMentioned = lowerBody.includes("@dalestudy");
+
+  if (!isMentioned) {
+    return null;
+  }
+
+  const mentionMatch = commentBody.match(/@dalestudy\s*(.*)/i);
+  const userRequest = mentionMatch && mentionMatch[1].trim() ? mentionMatch[1].trim() : null;
+
+  return { isMentioned: true, userRequest };
+}
+
+/**
  * Issue Comment 이벤트 처리 (AI 코드 리뷰 요청)
  */
 async function handleIssueCommentEvent(payload, env) {
@@ -276,21 +296,14 @@ async function handleIssueCommentEvent(payload, env) {
 
   const prNumber = issue.number;
 
-  // 멘션 감지: @dalestudy만 체크
-  const commentBody = comment.body;
-  const lowerBody = commentBody.toLowerCase();
-  const isMentioned = lowerBody.includes("@dalestudy");
-
-  if (!isMentioned) {
+  // 멘션 감지 및 사용자 요청 추출
+  const mention = extractMentionAndRequest(comment.body);
+  if (!mention) {
     console.log("Ignoring: bot not mentioned");
     return corsResponse({ message: "Ignored: not mentioned" });
   }
 
-  // 멘션 뒤의 텍스트 추출
-  const mentionMatch = commentBody.match(/@dalestudy\s*(.*)/i);
-  const userRequest = mentionMatch && mentionMatch[1].trim() ? mentionMatch[1].trim() : null;
-
-  console.log(`AI review requested for PR #${prNumber}${userRequest ? ` - Request: ${userRequest}` : ""}`);
+  console.log(`AI review requested for PR #${prNumber}${mention.userRequest ? ` - Request: ${mention.userRequest}` : ""}`);
 
   // OPENAI_API_KEY 확인
   if (!env.OPENAI_API_KEY) {
@@ -303,13 +316,13 @@ async function handleIssueCommentEvent(payload, env) {
     const appToken = await generateGitHubAppToken(env);
 
     // 👀 reaction 추가 (리뷰 시작 알림)
-    await fetch(
-      `https://api.github.com/repos/${repoOwner}/${repoName}/issues/comments/${comment.id}/reactions`,
-      {
-        method: "POST",
-        headers: getGitHubHeaders(appToken),
-        body: JSON.stringify({ content: "eyes" }),
-      }
+    await addReactionToComment(
+      repoOwner,
+      repoName,
+      comment.id,
+      "issue",
+      "eyes",
+      appToken
     );
 
     await performAIReview(
@@ -319,7 +332,8 @@ async function handleIssueCommentEvent(payload, env) {
       issue.title,
       issue.body,
       appToken,
-      env.OPENAI_API_KEY
+      env.OPENAI_API_KEY,
+      mention.userRequest
     );
 
     console.log(`AI review completed for PR #${prNumber}`);
@@ -354,16 +368,14 @@ async function handlePullRequestReviewCommentEvent(payload, env) {
   const repoName = payload.repository.name;
   const prNumber = pullRequest.number;
 
-  // 멘션 감지: @dalestudy만 체크
-  const commentBody = comment.body.toLowerCase();
-  const isMentioned = commentBody.includes("@dalestudy");
-
-  if (!isMentioned) {
+  // 멘션 감지 및 사용자 요청 추출
+  const mention = extractMentionAndRequest(comment.body);
+  if (!mention) {
     console.log("Ignoring: bot not mentioned");
     return corsResponse({ message: "Ignored: not mentioned" });
   }
 
-  console.log(`AI review requested for PR #${prNumber} (review comment)`);
+  console.log(`AI review requested for PR #${prNumber} (review comment)${mention.userRequest ? ` - Request: ${mention.userRequest}` : ""}`);
 
   // OPENAI_API_KEY 확인
   if (!env.OPENAI_API_KEY) {
@@ -376,43 +388,26 @@ async function handlePullRequestReviewCommentEvent(payload, env) {
     const appToken = await generateGitHubAppToken(env);
 
     // 👀 reaction 추가
-    await fetch(
-      `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/comments/${comment.id}/reactions`,
-      {
-        method: "POST",
-        headers: getGitHubHeaders(appToken),
-        body: JSON.stringify({ content: "eyes" }),
-      }
+    await addReactionToComment(
+      repoOwner,
+      repoName,
+      comment.id,
+      "pull",
+      "eyes",
+      appToken
     );
 
-    // AI 리뷰 생성
-    const { generateCodeReview } = await import("../utils/openai.js");
-    const { getPRDiff } = await import("../utils/prReview.js");
-
-    const prDiff = await getPRDiff(repoOwner, repoName, prNumber, appToken);
-
-    // diff가 너무 크면 스킵
-    const diffLines = prDiff.split("\n").length;
-    if (diffLines > 1000) {
-      console.log(`Skipping AI review: diff too large (${diffLines} lines)`);
-      return corsResponse({ message: "Diff too large" });
-    }
-
-    const reviewContent = await generateCodeReview(
-      prDiff,
+    // performAIReview 사용 (스레드 답변 모드)
+    await performAIReview(
+      repoOwner,
+      repoName,
+      prNumber,
       pullRequest.title,
       pullRequest.body,
-      env.OPENAI_API_KEY
-    );
-
-    // 스레드 답변으로 작성
-    await fetch(
-      `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/comments/${comment.id}/replies`,
-      {
-        method: "POST",
-        headers: getGitHubHeaders(appToken),
-        body: JSON.stringify({ body: reviewContent }),
-      }
+      appToken,
+      env.OPENAI_API_KEY,
+      mention.userRequest,
+      comment.id  // 스레드 답변으로 작성
     );
 
     console.log(`AI review completed for PR #${prNumber} (thread reply)`);
