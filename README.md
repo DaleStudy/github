@@ -61,10 +61,10 @@ wrangler secret put PRIVATE_KEY
 wrangler deploy
 ```
 
-배포 완료 후 URL이 표시됩니다:
+배포 완료 후 Custom Domain을 통해 접근 가능합니다:
 
 ```
-https://dalestudy-week-checker.your-subdomain.workers.dev
+https://github.dalestudy.com
 ```
 
 ## API 엔드포인트

@@ -228,37 +228,52 @@ wrangler deploy
 
 자세한 배포 가이드는 `DEPLOYMENT.md` 참고.
 
-## GitHub Organization Webhook 설정
+## GitHub App Webhook 설정
 
-### 1. Webhook URL 등록
+### 1. GitHub App 설정 페이지 접근
 
-**Organization Settings** → **Webhooks** → **Add webhook**
-
-- **Payload URL**: `https://github.dalestudy.com/webhooks`
-- **Content type**: `application/json`
-- **Secret**: 안전한 랜덤 문자열 (Worker secrets에도 동일하게 설정)
-
-### 2. 이벤트 구독
-
-**Which events would you like to trigger this webhook?**
-- ☑️ **Projects v2 items** (`projects_v2_item` 이벤트)
-- ☑️ **Pull requests** (`pull_request` 이벤트)
-
-### 3. Worker Secrets 설정
-
-```bash
-wrangler secret put WEBHOOK_SECRET
-# 프롬프트에서 GitHub webhook secret 입력
+```
+https://github.com/settings/apps/dalestudy
 ```
 
-### 4. GitHub App 권한 확인
+### 2. General 탭 - Webhook 설정
 
-**Organization Settings** → **GitHub Apps** → **DaleStudy App**
+- **Webhook URL**: `https://github.dalestudy.com/webhooks`
+- **Webhook Secret**: (선택사항) 안전한 랜덤 문자열
+- **✅ Active**: 체크
 
-필수 권한:
-- **Organization projects**: Read & Write
-- **Pull requests**: Read
-- **Issues**: Read & Write (댓글 작성/삭제)
+### 3. Permissions & events 탭 - 권한 설정
+
+**Repository permissions:**
+- **Contents**: Read
+- **Issues**: Read & write (issue_comment 이벤트용)
+- **Metadata**: Read
+- **Pull requests**: Read & write
+- **Projects**: Read & write (Projects V2)
+
+**Subscribe to events:**
+- ☑️ **Issue comments** (`issue_comment` - AI 코드 리뷰)
+- ☑️ **Projects v2 item** (`projects_v2_item` - Week 체크)
+- ☑️ **Pull requests** (`pull_request` - Week 체크)
+
+### 4. Worker Secrets 설정
+
+```bash
+# OpenAI API Key (AI 코드 리뷰용, 필수)
+wrangler secret put OPENAI_API_KEY
+
+# Webhook Secret (선택사항)
+wrangler secret put WEBHOOK_SECRET
+```
+
+### 5. GitHub App 설치
+
+저장소에 App이 설치되어 있는지 확인:
+```
+https://github.com/apps/dalestudy/installations
+```
+
+**DaleStudy organization에 설치**되어 있어야 하며, **leetcode-study 저장소 접근 권한** 필요
 
 ## 수동 호출 (선택사항)
 
