@@ -273,12 +273,9 @@ async function handleIssueCommentEvent(payload, env) {
 
   const prNumber = issue.number;
 
-  // 멘션 감지: @dalestudy, @dalestudy[bot], 리뷰, review 등
+  // 멘션 감지: @dalestudy만 체크
   const commentBody = comment.body.toLowerCase();
-  const isMentioned =
-    commentBody.includes("@dalestudy") ||
-    commentBody.includes("리뷰") ||
-    commentBody.includes("review");
+  const isMentioned = commentBody.includes("@dalestudy");
 
   if (!isMentioned) {
     console.log("Ignoring: bot not mentioned");
