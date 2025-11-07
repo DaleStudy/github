@@ -19,6 +19,7 @@ import {
   isClosedPR,
 } from "../utils/validation.js";
 import { ALLOWED_REPO } from "../utils/constants.js";
+import { performAIReview } from "../utils/prReview.js";
 
 /**
  * GitHub webhook 이벤트 처리
@@ -51,6 +52,9 @@ export async function handleWebhook(request, env) {
 
       case "pull_request":
         return handlePullRequestEvent(payload, env);
+
+      case "issue_comment":
+        return handleIssueCommentEvent(payload, env);
 
       default:
         console.log(`Unhandled event type: ${eventType}`);
@@ -240,4 +244,77 @@ async function handlePullRequestEvent(payload, env) {
     pr: prNumber,
     week: weekValue,
   });
+}
+
+/**
+ * Issue Comment 이벤트 처리 (AI 코드 리뷰 요청)
+ */
+async function handleIssueCommentEvent(payload, env) {
+  const action = payload.action;
+
+  // created 액션만 처리
+  if (action !== "created") {
+    console.log(`Ignoring issue_comment action: ${action}`);
+    return corsResponse({ message: `Ignored: ${action}` });
+  }
+
+  console.log(`Processing issue_comment action: ${action}`);
+
+  const comment = payload.comment;
+  const issue = payload.issue;
+  const repoOwner = payload.repository.owner.login;
+  const repoName = payload.repository.name;
+
+  // PR에 달린 댓글인지 확인
+  if (!issue.pull_request) {
+    console.log("Ignoring: comment not on PR");
+    return corsResponse({ message: "Ignored: not a PR comment" });
+  }
+
+  const prNumber = issue.number;
+
+  // 멘션 감지: @dalestudy, @dalestudy[bot], 리뷰, review 등
+  const commentBody = comment.body.toLowerCase();
+  const isMentioned =
+    commentBody.includes("@dalestudy") ||
+    commentBody.includes("리뷰") ||
+    commentBody.includes("review");
+
+  if (!isMentioned) {
+    console.log("Ignoring: bot not mentioned");
+    return corsResponse({ message: "Ignored: not mentioned" });
+  }
+
+  console.log(`AI review requested for PR #${prNumber}`);
+
+  // OPENAI_API_KEY 확인
+  if (!env.OPENAI_API_KEY) {
+    console.log("OPENAI_API_KEY not configured");
+    return corsResponse({ message: "AI review not configured" });
+  }
+
+  // AI 코드 리뷰 실행
+  try {
+    const appToken = await generateGitHubAppToken(env);
+
+    await performAIReview(
+      repoOwner,
+      repoName,
+      prNumber,
+      issue.title,
+      issue.body,
+      appToken,
+      env.OPENAI_API_KEY
+    );
+
+    console.log(`AI review completed for PR #${prNumber}`);
+
+    return corsResponse({
+      message: "AI review posted",
+      pr: prNumber,
+    });
+  } catch (error) {
+    console.error(`AI review failed for PR #${prNumber}:`, error);
+    return errorResponse(`AI review failed: ${error.message}`, 500);
+  }
 }
