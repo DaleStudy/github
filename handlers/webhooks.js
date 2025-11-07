@@ -62,8 +62,8 @@ export async function handleWebhook(request, env) {
 async function handleProjectsV2ItemEvent(payload, env) {
   const action = payload.action;
 
-  // edited, created 액션만 처리
-  if (!["edited", "created"].includes(action)) {
+  // edited, created, deleted 액션만 처리
+  if (!["edited", "created", "deleted"].includes(action)) {
     console.log(`Ignoring projects_v2_item action: ${action}`);
     return corsResponse({ message: `Ignored: ${action}` });
   }
@@ -75,15 +75,20 @@ async function handleProjectsV2ItemEvent(payload, env) {
     return corsResponse({ message: "Ignored: not a PR" });
   }
 
-  // Week 필드 변경인지 확인
-  const changes = payload.changes;
-  const isWeekField =
-    changes?.field_value?.field_name === "Week" ||
-    changes?.field_value?.from?.field_name === "Week";
+  // deleted 액션은 항상 처리 (프로젝트에서 제거 = Week 설정 불가능)
+  if (action === "deleted") {
+    // PR 정보 추출 및 경고 댓글 작성으로 이동
+  } else {
+    // Week 필드 변경인지 확인 (edited, created)
+    const changes = payload.changes;
+    const isWeekField =
+      changes?.field_value?.field_name === "Week" ||
+      changes?.field_value?.from?.field_name === "Week";
 
-  if (!isWeekField) {
-    console.log("Ignoring: not a Week field change");
-    return corsResponse({ message: "Ignored: not Week field" });
+    if (!isWeekField) {
+      console.log("Ignoring: not a Week field change");
+      return corsResponse({ message: "Ignored: not Week field" });
+    }
   }
 
   // PR 정보 추출
@@ -104,6 +109,20 @@ async function handleProjectsV2ItemEvent(payload, env) {
   }
 
   const [, repoOwner, repoName, prNumber] = matches;
+
+  // deleted 액션은 Week 설정 불가능하므로 경고 댓글 작성
+  if (action === "deleted") {
+    console.log(`Project removed from PR #${prNumber}`);
+    await ensureWarningComment(repoOwner, repoName, prNumber, env);
+
+    return corsResponse({
+      message: "Processed",
+      pr: prNumber,
+      action: "deleted",
+      week: null,
+    });
+  }
+
   const weekValue = payload.projects_v2_item?.field_value?.text || null;
 
   console.log(
