@@ -14,7 +14,7 @@ import { generateCodeReview } from "./openai.js";
  * @param {string} githubToken - GitHub 토큰
  * @returns {Promise<string>} PR diff 내용
  */
-async function getPRDiff(repoOwner, repoName, prNumber, githubToken) {
+export async function getPRDiff(repoOwner, repoName, prNumber, githubToken) {
   const response = await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}`,
     {
@@ -33,35 +33,29 @@ async function getPRDiff(repoOwner, repoName, prNumber, githubToken) {
 }
 
 /**
- * AI 코드 리뷰 댓글 작성 (원본 댓글에 답변)
+ * AI 코드 리뷰 댓글 작성
  *
  * @param {string} repoOwner - 저장소 소유자
  * @param {string} repoName - 저장소 이름
  * @param {number} prNumber - PR 번호
  * @param {string} reviewContent - 리뷰 내용 (마크다운)
  * @param {string} githubToken - GitHub 토큰
- * @param {number} inReplyTo - 답변할 댓글 ID (선택사항)
  */
 async function postReviewComment(
   repoOwner,
   repoName,
   prNumber,
   reviewContent,
-  githubToken,
-  inReplyTo = null
+  githubToken
 ) {
   const commentBody = `${reviewContent}`;
-
-  const body = inReplyTo
-    ? { body: commentBody, in_reply_to: inReplyTo }
-    : { body: commentBody };
 
   await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/issues/${prNumber}/comments`,
     {
       method: "POST",
       headers: getGitHubHeaders(githubToken),
-      body: JSON.stringify(body),
+      body: JSON.stringify({ body: commentBody }),
     }
   );
 }
@@ -76,7 +70,7 @@ async function postReviewComment(
  * @param {string} prBody - PR 본문
  * @param {string} githubToken - GitHub 토큰
  * @param {string} openaiApiKey - OpenAI API 키
- * @param {number} commentId - 답변할 댓글 ID (선택사항)
+ * @param {string} userRequest - 사용자의 구체적인 요청 (선택사항)
  */
 export async function performAIReview(
   repoOwner,
@@ -86,7 +80,7 @@ export async function performAIReview(
   prBody,
   githubToken,
   openaiApiKey,
-  commentId = null
+  userRequest = null
 ) {
   console.log(`Starting AI review for PR #${prNumber}`);
 
@@ -108,14 +102,13 @@ export async function performAIReview(
     openaiApiKey
   );
 
-  // 리뷰 댓글 작성 (원본 댓글에 답변)
+  // 리뷰 댓글 작성
   await postReviewComment(
     repoOwner,
     repoName,
     prNumber,
     reviewContent,
-    githubToken,
-    commentId
+    githubToken
   );
 
   console.log(`AI review posted for PR #${prNumber}`);
