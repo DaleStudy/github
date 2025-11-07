@@ -12,8 +12,27 @@
  * @param {string} userRequest - 사용자의 구체적인 요청 (선택사항)
  * @returns {Promise<string>} AI가 생성한 리뷰 댓글 (마크다운)
  */
-export async function generateCodeReview(prDiff, prTitle, prBody, apiKey, userRequest = null) {
-  const systemPrompt = `당신은 리트코드 스터디 그룹의 AI 코치입니다.
+export async function generateCodeReview(
+  prDiff,
+  prTitle,
+  prBody,
+  apiKey,
+  userRequest = null
+) {
+  // userRequest가 있으면 Q&A 모드, 없으면 전체 리뷰 모드
+  const systemPrompt = userRequest
+    ? `당신은 리트코드 스터디 그룹의 AI 코치입니다.
+사용자가 PR의 코드에 대해 구체적인 질문을 했습니다.
+PR의 코드 변경 사항을 참고하여 사용자의 질문에 명확하고 도움이 되는 답변을 제공하세요.
+
+답변 시:
+  •	사용자의 질문에 직접적으로 답변하세요
+  •	코드의 해당 부분을 구체적으로 언급하세요
+  •	필요하면 예시나 개선 방법을 제안하세요
+  •	격려와 학습이 되는 피드백을 함께 주세요
+
+300 글자를 초과하지 말아주세요.`
+    : `당신은 리트코드 스터디 그룹의 AI 코치입니다.
 아래 코드 변경 사항을 리뷰하고 건설적인 피드백을 제공하세요.
 
 리뷰 시 아래 항목에 집중합니다:
@@ -23,27 +42,27 @@ export async function generateCodeReview(prDiff, prTitle, prBody, apiKey, userRe
   •	코드의 가독성 및 스타일, 베스트 프랙티스 준수 여부
 	•	잠재적인 버그 또는 개선 가능성
 
-단순히 지적만 하지 말고, 격려와 학습이 되는 피드백을 함께 주세요. 
+단순히 지적만 하지 말고, 격려와 학습이 되는 피드백을 함께 주세요.
 해당 사항없는 항목은 생략하고 자연스럽게 작성하세요.
 300 글자를 초과하지 말아주세요.
 `;
 
-  let userPrompt = `# PR Title
+  let userPrompt = `# PR 제목
 ${prTitle}
 
-# PR Description
-${prBody || "No description provided"}
+# PR 설명
+${prBody || "설명 없음"}
 
-# Code Changes
+# 코드 변경사항
 \`\`\`diff
 ${prDiff}
 \`\`\`
 `;
 
   if (userRequest) {
-    userPrompt += `\n# User's Specific Request\n${userRequest}\n\nPlease review this pull request, focusing on the user's specific request.`;
+    userPrompt += `\n# 사용자 질문\n${userRequest}`;
   } else {
-    userPrompt += `\nPlease review this pull request.`;
+    userPrompt += `\n이 PR을 리뷰해주세요.`;
   }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
