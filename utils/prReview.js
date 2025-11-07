@@ -48,7 +48,7 @@ async function postReviewComment(
   reviewContent,
   githubToken
 ) {
-  const commentBody = `## 🤖 AI Code Review
+  const commentBody = `### 🤖 AI 코치 리뷰
 
 ${reviewContent}`;
 
