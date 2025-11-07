@@ -2,7 +2,11 @@
  * GitHub Webhook 이벤트 핸들러
  */
 
-import { generateGitHubAppToken, getGitHubHeaders } from "../utils/github.js";
+import {
+  generateGitHubAppToken,
+  getGitHubHeaders,
+  getPRInfoFromNodeId,
+} from "../utils/github.js";
 import { corsResponse, errorResponse } from "../utils/cors.js";
 import {
   ensureWarningComment,
@@ -94,26 +98,24 @@ async function handleProjectsV2ItemEvent(payload, env) {
     }
   }
 
-  // PR 정보 추출
-  const prUrl = payload.projects_v2_item?.content_url;
-  if (!prUrl) {
-    console.log("No PR URL found");
-    return corsResponse({ message: "Ignored: no PR URL" });
+  // PR 정보 추출 (GraphQL로 content_node_id 조회)
+  const contentNodeId = payload.projects_v2_item?.content_node_id;
+  if (!contentNodeId) {
+    console.log("No content_node_id found");
+    return corsResponse({ message: "Ignored: no content_node_id" });
   }
 
-  // PR URL에서 repo와 PR number 추출
-  const matches = prUrl.match(
-    /https:\/\/api\.github\.com\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)/
-  );
-  if (!matches) {
-    console.log(`Invalid PR URL: ${prUrl}`);
-    return errorResponse("Invalid PR URL", 400);
+  const appToken = await generateGitHubAppToken(env);
+  const prInfo = await getPRInfoFromNodeId(contentNodeId, appToken);
+
+  if (!prInfo) {
+    console.log(`Failed to get PR info for node: ${contentNodeId}`);
+    return errorResponse("Failed to get PR info", 500);
   }
 
-  const [, repoOwner, repoName, prNumber] = matches;
+  const { number: prNumber, owner: repoOwner, repo: repoName } = prInfo;
 
   // PR 상태 확인 (closed PR, maintenance 라벨 예외)
-  const appToken = await generateGitHubAppToken(env);
   const prResponse = await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}`,
     { headers: getGitHubHeaders(appToken) }

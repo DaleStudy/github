@@ -16,6 +16,53 @@ export function getGitHubHeaders(token) {
 }
 
 /**
+ * content_node_id로부터 PR 정보 조회 (GraphQL)
+ */
+export async function getPRInfoFromNodeId(nodeId, token) {
+  const query = `
+    query($nodeId: ID!) {
+      node(id: $nodeId) {
+        ... on PullRequest {
+          number
+          repository {
+            owner {
+              login
+            }
+            name
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await fetch("https://api.github.com/graphql", {
+    method: "POST",
+    headers: getGitHubHeaders(token),
+    body: JSON.stringify({
+      query,
+      variables: { nodeId },
+    }),
+  });
+
+  const result = await response.json();
+
+  if (result.errors) {
+    throw new Error(`GraphQL error: ${JSON.stringify(result.errors)}`);
+  }
+
+  const prData = result.data?.node;
+  if (!prData) {
+    return null;
+  }
+
+  return {
+    number: prData.number,
+    owner: prData.repository.owner.login,
+    repo: prData.repository.name,
+  };
+}
+
+/**
  * GitHub App Installation Token 발급
  */
 export async function generateGitHubAppToken(env) {
