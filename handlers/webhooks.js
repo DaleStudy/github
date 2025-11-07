@@ -264,7 +264,30 @@ function extractMentionAndRequest(commentBody) {
   }
 
   const mentionMatch = commentBody.match(/@dalestudy\s*(.*)/i);
-  const userRequest = mentionMatch && mentionMatch[1].trim() ? mentionMatch[1].trim() : null;
+  let userRequest = mentionMatch && mentionMatch[1].trim() ? mentionMatch[1].trim() : null;
+
+  // 일반적인 리뷰 요청 키워드만 있는 경우 userRequest를 null로 처리
+  // (전체 리뷰 모드로 동작하도록)
+  if (userRequest) {
+    const normalizedRequest = userRequest.toLowerCase().trim();
+    const genericReviewKeywords = [
+      'review',
+      'review this',
+      'please review',
+      'review please',
+      '리뷰',
+      '리뷰해줘',
+      '리뷰 해줘',
+      '리뷰해주세요',
+      '리뷰 해주세요',
+      '코드리뷰',
+      '코드 리뷰'
+    ];
+
+    if (genericReviewKeywords.includes(normalizedRequest)) {
+      userRequest = null;
+    }
+  }
 
   return { isMentioned: true, userRequest };
 }
