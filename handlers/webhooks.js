@@ -76,10 +76,11 @@ async function handleProjectsV2ItemEvent(payload, env) {
   }
 
   // deleted 액션은 항상 처리 (프로젝트에서 제거 = Week 설정 불가능)
-  if (action === "deleted") {
-    // PR 정보 추출 및 경고 댓글 작성으로 이동
+  // created 액션도 항상 처리 (프로젝트 추가 시 Week 누락 체크)
+  if (action === "deleted" || action === "created") {
+    // PR 정보 추출 및 처리로 이동
   } else {
-    // Week 필드 변경인지 확인 (edited, created)
+    // edited 액션은 Week 필드 변경인지 확인
     const changes = payload.changes;
     const isWeekField =
       changes?.field_value?.field_name === "Week" ||
@@ -123,6 +124,32 @@ async function handleProjectsV2ItemEvent(payload, env) {
     });
   }
 
+  // created 액션은 실제 Week 값을 조회해서 확인
+  if (action === "created") {
+    console.log(`PR #${prNumber} added to project`);
+
+    // Week 값 조회 (GraphQL)
+    const appToken = await generateGitHubAppToken(env);
+    const weekValue = await getWeekValue(repoOwner, repoName, prNumber, appToken);
+
+    console.log(`Week value after project add: ${weekValue || "not set"}`);
+
+    // Week 설정 여부에 따라 댓글 작성/삭제
+    if (!weekValue) {
+      await ensureWarningComment(repoOwner, repoName, prNumber, env);
+    } else {
+      await removeWarningComment(repoOwner, repoName, prNumber, env);
+    }
+
+    return corsResponse({
+      message: "Processed",
+      pr: prNumber,
+      action: "created",
+      week: weekValue,
+    });
+  }
+
+  // edited 액션은 payload에서 Week 값 확인
   const weekValue = payload.projects_v2_item?.field_value?.text || null;
 
   console.log(
