@@ -68,9 +68,9 @@ export async function newFeature(request, env) {
 }
 
 // index.js에 라우팅 추가
-import { newFeature } from './handlers/new-feature.js';
+import { newFeature } from "./handlers/new-feature.js";
 
-if (url.pathname === '/new-feature') {
+if (url.pathname === "/new-feature") {
   return newFeature(request, env);
 }
 ```
@@ -151,9 +151,10 @@ GitHub Organization webhook 수신용 엔드포인트
 
 **Request:**
 
+`repo_owner` 생략 시 기본값으로 `DaleStudy`가 사용됩니다.
+
 ```json
 {
-  "repo_owner": "DaleStudy",
   "repo_name": "leetcode-study"
 }
 ```
@@ -170,6 +171,67 @@ GitHub Organization webhook 수신용 엔드포인트
   "results": [
     { "pr": 1970, "week": null, "commented": true },
     { "pr": 1969, "week": "Week 8", "commented": false, "deleted": true }
+  ]
+}
+```
+
+#### `POST /approve-prs`
+
+열려있는 답안 제출 PR을 일괄 승인합니다. `excludes` 배열로 특정 PR을 제외합니다. 이미 승인된 PR, `maintenance` 라벨, Draft 상태의 PR은 자동으로 스킵됩니다.
+
+**Request:**
+
+```json
+{ "repo_name": "leetcode-study", "excludes": [1972] }
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "action": "approve",
+  "repo": "DaleStudy/leetcode-study",
+  "total_open_prs": 5,
+  "processed": 2,
+  "approved": 2,
+  "skipped": 0,
+  "results": [
+    { "pr": 1970, "title": "week8 solutions", "approved": true },
+    { "pr": 1971, "title": "week8 extras", "approved": true }
+  ]
+}
+```
+
+#### `POST /merge-prs`
+
+열려있는 PR을 일괄 병합합니다. 기본 병합 방식은 `merge`이며 `merge_method` 값으로 `merge | squash | rebase` 중 선택할 수 있습니다. `excludes`로 특정 PR을 제외할 수 있습니다. 승인 리뷰가 없거나 `maintenance` 라벨이 붙은 PR, Draft PR, GitHub `mergeable_state !== "clean"` PR은 스킵되며 `unknown`/`behind` 상태는 최대 1초 후 한 번 더 확인합니다.
+
+**Request:**
+
+```json
+{
+  "repo_name": "leetcode-study",
+  "merge_method": "squash",
+  "excludes": [1972]
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "action": "merge",
+  "repo": "DaleStudy/leetcode-study",
+  "merge_method": "squash",
+  "total_open_prs": 5,
+  "processed": 2,
+  "merged": 2,
+  "skipped": 0,
+  "results": [
+    { "pr": 1970, "title": "week8 solutions", "merged": true, "sha": "abc123" },
+    { "pr": 1971, "title": "week8 extras", "merged": true, "sha": "def456" }
   ]
 }
 ```
@@ -192,7 +254,7 @@ GitHub Organization webhook 수신용 엔드포인트
 
 - `contents: read`: PR 정보 조회
 - `issues: write`: 댓글 작성 및 삭제
-- `pull_requests: read`: PR 목록 및 상태 조회
+- `pull_requests: read & write`: PR 목록/상태 조회, 리뷰 생성, 병합 수행
 - `organization_projects: read`: Projects v2의 Week 필드 접근 (GraphQL API)
 
 ### Secrets 관리
@@ -245,6 +307,7 @@ https://github.com/settings/apps/dalestudy
 ### 3. Permissions & events 탭 - 권한 설정
 
 **Repository permissions:**
+
 - **Contents**: Read
 - **Issues**: Read & write (issue_comment 이벤트용)
 - **Metadata**: Read
@@ -252,6 +315,7 @@ https://github.com/settings/apps/dalestudy
 - **Projects**: Read & write (Projects V2)
 
 **Subscribe to events:**
+
 - ☑️ **Issue comments** (`issue_comment` - AI 코드 리뷰)
 - ☑️ **Projects v2 item** (`projects_v2_item` - Week 체크)
 - ☑️ **Pull requests** (`pull_request` - Week 체크)
@@ -269,6 +333,7 @@ wrangler secret put WEBHOOK_SECRET
 ### 5. GitHub App 설치
 
 저장소에 App이 설치되어 있는지 확인:
+
 ```
 https://github.com/apps/dalestudy/installations
 ```

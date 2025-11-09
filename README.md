@@ -77,9 +77,10 @@ https://github.dalestudy.com
 
 **Request:**
 
+요청 바디에서 `repo_owner`를 생략하면 자동으로 `DaleStudy`가 사용됩니다.
+
 ```json
 {
-  "repo_owner": "DaleStudy",
   "repo_name": "leetcode-study"
 }
 ```
@@ -96,6 +97,67 @@ https://github.dalestudy.com
   "results": [
     { "pr": 1970, "week": null, "commented": true },
     { "pr": 1969, "week": "Week 8", "commented": false, "deleted": true }
+  ]
+}
+```
+
+### `POST /approve-prs`
+
+열려있는 답안 제출 PR을 일괄 승인합니다. `excludes` 배열을 사용해 특정 PR 번호를 제외할 수 있습니다. 이미 승인되었거나 Draft/`maintenance` 라벨이 붙은 PR은 자동으로 스킵됩니다.
+
+**Request:**
+
+```json
+{ "repo_name": "leetcode-study", "excludes": [1972] }
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "action": "approve",
+  "repo": "DaleStudy/leetcode-study",
+  "total_open_prs": 5,
+  "processed": 2,
+  "approved": 2,
+  "skipped": 0,
+  "results": [
+    { "pr": 1970, "title": "week8 solutions", "approved": true },
+    { "pr": 1971, "title": "week8 extras", "approved": true }
+  ]
+}
+```
+
+### `POST /merge-prs`
+
+열려있는 PR을 일괄 병합합니다. 기본 병합 방식은 `merge`이며, `merge_method`로 `merge | squash | rebase` 중 선택할 수 있습니다. `excludes` 배열로 특정 PR을 제외할 수 있습니다. 최소 1개의 승인 리뷰가 없거나 Draft/`maintenance` 라벨이 붙은 PR은 스킵되며, GitHub에서 `mergeable_state === "clean"`인 PR만 병합됩니다(`behind`, `dirty`, `unknown` 등은 스킵). `unknown`/`behind` 상태는 최대 1초 후 한 차례 재확인합니다.
+
+**Request:**
+
+```json
+{
+  "repo_name": "leetcode-study",
+  "excludes": [1972],
+  "merge_method": "squash"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "action": "merge",
+  "repo": "DaleStudy/leetcode-study",
+  "merge_method": "squash",
+  "total_open_prs": 5,
+  "processed": 2,
+  "merged": 2,
+  "skipped": 0,
+  "results": [
+    { "pr": 1970, "title": "week8 solutions", "merged": true, "sha": "abc123" },
+    { "pr": 1971, "title": "week8 extras", "merged": true, "sha": "def456" }
   ]
 }
 ```

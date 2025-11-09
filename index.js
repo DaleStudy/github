@@ -6,6 +6,8 @@
 
 import { checkWeeks } from "./handlers/check-weeks.js";
 import { handleWebhook } from "./handlers/webhooks.js";
+import { approvePrs } from "./handlers/approve_prs.js";
+import { mergePrs } from "./handlers/merge_prs.js";
 import { preflightResponse, corsResponse, errorResponse } from "./utils/cors.js";
 import { verifyWebhookSignature } from "./utils/webhook.js";
 
@@ -55,6 +57,16 @@ export default {
     // PR Week 설정 검사 (수동 호출용)
     if (url.pathname === "/check-weeks") {
       return checkWeeks(request, env);
+    }
+
+    // Bulk approve open PRs
+    if (url.pathname === "/approve-prs" || url.pathname === "/approve_prs") {
+      return approvePrs(request, env);
+    }
+
+    // Bulk merge open PRs
+    if (url.pathname === "/merge-prs" || url.pathname === "/merge_prs") {
+      return mergePrs(request, env);
     }
 
     // 지원하지 않는 엔드포인트

@@ -17,18 +17,16 @@ import { validateOrganization, hasMaintenanceLabel } from "../utils/validation.j
 export async function checkWeeks(request, env) {
   try {
     const { repo_owner, repo_name } = await request.json();
+    const repoOwner = repo_owner || "DaleStudy";
 
     // Validation
-    if (!repo_owner || !repo_name) {
-      return errorResponse(
-        "Missing required fields: repo_owner, repo_name",
-        400
-      );
+    if (!repo_name) {
+      return errorResponse("Missing required field: repo_name", 400);
     }
 
     // DaleStudy organization만 허용
-    if (!validateOrganization(repo_owner)) {
-      return errorResponse(`Unauthorized organization: ${repo_owner}`, 403);
+    if (!validateOrganization(repoOwner)) {
+      return errorResponse(`Unauthorized organization: ${repoOwner}`, 403);
     }
 
     // GitHub App Token 생성
@@ -36,7 +34,7 @@ export async function checkWeeks(request, env) {
 
     // Open PR 목록 조회
     const prsResponse = await fetch(
-      `https://api.github.com/repos/${repo_owner}/${repo_name}/pulls?state=open&per_page=100`,
+      `https://api.github.com/repos/${repoOwner}/${repo_name}/pulls?state=open&per_page=100`,
       { headers: getGitHubHeaders(appToken) }
     );
 
@@ -63,7 +61,7 @@ export async function checkWeeks(request, env) {
 
       // Week 값 확인 및 댓글 처리
       const weekValue = await handleWeekComment(
-        repo_owner,
+        repoOwner,
         repo_name,
         prNumber,
         env,
