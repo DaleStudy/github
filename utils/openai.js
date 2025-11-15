@@ -53,9 +53,9 @@ ${prDiff}
 `;
 
   if (userRequest) {
-    userPrompt += `\n# User's Question\n${userRequest}`;
+    userPrompt += `\n# 사용자 질문\n${userRequest}`;
   } else {
-    userPrompt += `\nPlease review this pull request.`;
+    userPrompt += `\n이 풀 리퀘스트를 리뷰해주세요.`;
   }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
