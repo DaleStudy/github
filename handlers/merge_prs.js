@@ -85,14 +85,20 @@ export async function mergePrs(request, env) {
         appToken
       );
 
-      if (!mergeableState.mergeable && mergeableState.retryable) {
-        await delay(1000);
+      // 최대 3번 재시도 (총 4번 조회, 최대 6초 대기)
+      let retries = 0;
+      const MAX_RETRIES = 3;
+      const RETRY_DELAY = 2000; // 2초
+
+      while (!mergeableState.mergeable && mergeableState.retryable && retries < MAX_RETRIES) {
+        await delay(RETRY_DELAY);
         mergeableState = await getMergeableState(
           repoOwner,
           repoName,
           pr.number,
           appToken
         );
+        retries++;
       }
 
       if (!mergeableState.mergeable) {
