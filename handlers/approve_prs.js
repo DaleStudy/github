@@ -102,13 +102,14 @@ async function approvePullRequest(owner, repo, prNumber, token) {
     }
   );
 
+  const payload = await safeJson(response);
+
   if (response.ok) {
     return { approved: true };
   }
 
-  const errorData = await safeJson(response);
   return {
     approved: false,
-    error: errorData.message || "Approval failed",
+    error: payload.message || "Approval failed",
   };
 }
