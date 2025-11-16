@@ -4,6 +4,7 @@ import {
   parsePrActionPayload,
   fetchOpenPullRequests,
   filterTargetPrs,
+  filterByWeekAndStatus,
   getSkipReason,
   formatResult,
   safeJson,
@@ -26,7 +27,7 @@ export async function mergePrs(request, env) {
       return payload.response;
     }
 
-    const { repoOwner, repoName, excludes, rawPayload } = payload.data;
+    const { repoOwner, repoName, week, excludes, rawPayload } = payload.data;
     const mergeMethod = (rawPayload.merge_method || "merge").toLowerCase();
 
     if (!ALLOWED_MERGE_METHODS.has(mergeMethod)) {
@@ -40,7 +41,12 @@ export async function mergePrs(request, env) {
 
     const appToken = await generateGitHubAppToken(env);
     const openPrs = await fetchOpenPullRequests(repoOwner, repoName, appToken);
-    const targetPrs = filterTargetPrs(openPrs, excludes);
+
+    // Week와 Status 필터링
+    const { filtered: weekFilteredPrs, weekMismatched, solvingExcluded } =
+      await filterByWeekAndStatus(openPrs, week, repoOwner, repoName, appToken);
+
+    const targetPrs = filterTargetPrs(weekFilteredPrs, excludes);
 
     const results = [];
     let merged = 0;
@@ -120,7 +126,11 @@ export async function mergePrs(request, env) {
       success: true,
       action: "merge",
       repo: `${repoOwner}/${repoName}`,
+      week_filter: week,
       total_open_prs: openPrs.length,
+      week_matched: weekFilteredPrs.length,
+      week_mismatched: weekMismatched,
+      solving_excluded: solvingExcluded,
       processed: targetPrs.length,
       merged,
       skipped,

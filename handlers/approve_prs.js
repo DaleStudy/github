@@ -4,6 +4,7 @@ import {
   parsePrActionPayload,
   fetchOpenPullRequests,
   filterTargetPrs,
+  filterByWeekAndStatus,
   getSkipReason,
   formatResult,
   safeJson,
@@ -25,10 +26,15 @@ export async function approvePrs(request, env) {
       return payload.response;
     }
 
-    const { repoOwner, repoName, excludes } = payload.data;
+    const { repoOwner, repoName, week, excludes } = payload.data;
     const appToken = await generateGitHubAppToken(env);
     const openPrs = await fetchOpenPullRequests(repoOwner, repoName, appToken);
-    const targetPrs = filterTargetPrs(openPrs, excludes);
+
+    // Week와 Status 필터링
+    const { filtered: weekFilteredPrs, weekMismatched, solvingExcluded } =
+      await filterByWeekAndStatus(openPrs, week, repoOwner, repoName, appToken);
+
+    const targetPrs = filterTargetPrs(weekFilteredPrs, excludes);
 
     const results = [];
     let approved = 0;
@@ -74,7 +80,11 @@ export async function approvePrs(request, env) {
       success: true,
       action: "approve",
       repo: `${repoOwner}/${repoName}`,
+      week_filter: week,
       total_open_prs: openPrs.length,
+      week_matched: weekFilteredPrs.length,
+      week_mismatched: weekMismatched,
+      solving_excluded: solvingExcluded,
       processed: targetPrs.length,
       approved,
       skipped,

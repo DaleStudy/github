@@ -5,6 +5,7 @@
 import { errorResponse } from "./cors.js";
 import { getGitHubHeaders } from "./github.js";
 import { validateOrganization, hasMaintenanceLabel } from "./validation.js";
+import { getProjectFields } from "./prWeeks.js";
 
 /**
  * 공통 payload 파서
@@ -14,12 +15,24 @@ export async function parsePrActionPayload(request) {
     const data = await request.json();
     const repoOwner = data.repo_owner || "DaleStudy";
     const repoName = data.repo_name;
+    const week = data.week;
 
     if (!repoName) {
       return {
         valid: false,
         response: errorResponse(
           "Missing required field: repo_name",
+          400
+        ),
+      };
+    }
+
+    // week 필수 검증
+    if (!week) {
+      return {
+        valid: false,
+        response: errorResponse(
+          "Missing required field: week (e.g., 'Week 8')",
           400
         ),
       };
@@ -39,6 +52,7 @@ export async function parsePrActionPayload(request) {
       data: {
         repoOwner,
         repoName,
+        week,
         excludes,
         rawPayload: data,
       },
@@ -110,6 +124,8 @@ export function formatResult(pr, result) {
   return {
     pr: pr.number,
     title: pr.title,
+    week: pr.week || null,
+    status: pr.status || null,
     ...result,
   };
 }
@@ -157,4 +173,62 @@ function parseNumberArray(value) {
   return [...new Set(value)]
     .map((n) => parseInt(n, 10))
     .filter((n) => Number.isInteger(n));
+}
+
+/**
+ * Week 값 매칭 (Week 8 == Week 8(current))
+ */
+export function matchesWeek(actualWeek, expectedWeek) {
+  if (!actualWeek) return false;
+
+  // 정확히 일치
+  if (actualWeek === expectedWeek) return true;
+
+  // "Week 8(current)" 형태도 매칭
+  if (actualWeek.startsWith(expectedWeek + "(")) return true;
+  if (expectedWeek.startsWith(actualWeek.replace(/\(current\)$/, "").trim())) return true;
+
+  return false;
+}
+
+/**
+ * Week와 Status로 PR 필터링
+ * - Week 필터링: 지정된 Week만
+ * - Status 필터링: "Solving" 상태 제외
+ *
+ * @returns {Promise<{filtered: Array, weekMismatched: number, solvingExcluded: number}>}
+ */
+export async function filterByWeekAndStatus(pullRequests, weekFilter, repoOwner, repoName, appToken) {
+  const filtered = [];
+  let weekMismatched = 0;
+  let solvingExcluded = 0;
+
+  for (const pr of pullRequests) {
+    // 프로젝트 필드 조회 (Week, Status)
+    const fields = await getProjectFields(repoOwner, repoName, pr.number, appToken);
+
+    // PR 객체에 Week와 Status 메타데이터 추가
+    pr.week = fields.week;
+    pr.status = fields.status;
+
+    // Week 필터링
+    if (!matchesWeek(fields.week, weekFilter)) {
+      weekMismatched++;
+      continue;
+    }
+
+    // Status "Solving" 제외
+    if (fields.status === "Solving") {
+      solvingExcluded++;
+      continue;
+    }
+
+    filtered.push(pr);
+  }
+
+  return {
+    filtered,
+    weekMismatched,
+    solvingExcluded,
+  };
 }

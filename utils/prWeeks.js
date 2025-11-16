@@ -5,10 +5,11 @@
 import { generateGitHubAppToken, getGitHubHeaders } from "./github.js";
 
 /**
- * PR의 Week 값 조회 (GraphQL)
+ * PR의 프로젝트 필드 값 조회 (Week, Status 등)
+ * @returns {Promise<{week: string|null, status: string|null}>}
  */
-export async function getWeekValue(repoOwner, repoName, prNumber, appToken) {
-  const weekQuery = `
+export async function getProjectFields(repoOwner, repoName, prNumber, appToken) {
+  const query = `
     query {
       repository(owner: "${repoOwner}", name: "${repoName}") {
         pullRequest(number: ${prNumber}) {
@@ -19,6 +20,14 @@ export async function getWeekValue(repoOwner, repoName, prNumber, appToken) {
                   __typename
                   ... on ProjectV2ItemFieldIterationValue {
                     title
+                    field {
+                      ... on ProjectV2FieldCommon {
+                        name
+                      }
+                    }
+                  }
+                  ... on ProjectV2ItemFieldSingleSelectValue {
+                    name
                     field {
                       ... on ProjectV2FieldCommon {
                         name
@@ -37,26 +46,45 @@ export async function getWeekValue(repoOwner, repoName, prNumber, appToken) {
   const response = await fetch("https://api.github.com/graphql", {
     method: "POST",
     headers: { ...getGitHubHeaders(appToken), "Content-Type": "application/json" },
-    body: JSON.stringify({ query: weekQuery }),
+    body: JSON.stringify({ query }),
   });
 
   const data = await response.json();
   const projectItems =
     data.data?.repository?.pullRequest?.projectItems?.nodes || [];
 
+  const result = { week: null, status: null };
+
   for (const item of projectItems) {
     const fieldValues = item.fieldValues?.nodes || [];
     for (const field of fieldValues) {
+      // Week 필드 (Iteration 타입)
       if (
         field.__typename === "ProjectV2ItemFieldIterationValue" &&
         field.field?.name === "Week"
       ) {
-        return field.title;
+        result.week = field.title;
+      }
+      // Status 필드 (SingleSelect 타입)
+      if (
+        field.__typename === "ProjectV2ItemFieldSingleSelectValue" &&
+        field.field?.name === "Status"
+      ) {
+        result.status = field.name;
       }
     }
   }
 
-  return null;
+  return result;
+}
+
+/**
+ * PR의 Week 값 조회 (GraphQL)
+ * @deprecated Use getProjectFields() for better performance
+ */
+export async function getWeekValue(repoOwner, repoName, prNumber, appToken) {
+  const fields = await getProjectFields(repoOwner, repoName, prNumber, appToken);
+  return fields.week;
 }
 
 /**
@@ -172,7 +200,8 @@ export async function removeWarningComment(repoOwner, repoName, prNumber, env) {
  * @returns {Promise<string|null>} Week 값 또는 null
  */
 export async function handleWeekComment(repoOwner, repoName, prNumber, env, appToken) {
-  const weekValue = await getWeekValue(repoOwner, repoName, prNumber, appToken);
+  const fields = await getProjectFields(repoOwner, repoName, prNumber, appToken);
+  const weekValue = fields.week;
 
   if (!weekValue) {
     await ensureWarningComment(repoOwner, repoName, prNumber, env);
