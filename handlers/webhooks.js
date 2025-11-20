@@ -20,6 +20,7 @@ import {
 } from "../utils/validation.js";
 import { ALLOWED_REPO } from "../utils/constants.js";
 import { performAIReview, addReactionToComment } from "../utils/prReview.js";
+import { hasApprovedReview, safeJson } from "../utils/prActions.js";
 
 /**
  * GitHub webhook 이벤트 처리
@@ -253,7 +254,7 @@ async function handlePullRequestEvent(payload, env) {
  * 댓글에서 @dalestudy 멘션과 사용자 요청 추출
  *
  * @param {string} commentBody - 댓글 내용
- * @returns {Object|null} { isMentioned, userRequest } 또는 null
+ * @returns {Object|null} { isMentioned, userRequest, isApprovalRequest } 또는 null
  */
 function extractMentionAndRequest(commentBody) {
   const lowerBody = commentBody.toLowerCase();
@@ -266,9 +267,15 @@ function extractMentionAndRequest(commentBody) {
   const mentionMatch = commentBody.match(/@dalestudy\s*(.*)/i);
   let userRequest = mentionMatch && mentionMatch[1].trim() ? mentionMatch[1].trim() : null;
 
+  // 승인 요청 키워드 확인
+  const approvalKeywords = ['approve', '승인'];
+  const isApprovalRequest = userRequest && approvalKeywords.some(keyword =>
+    userRequest.toLowerCase().trim() === keyword
+  );
+
   // 일반적인 리뷰 요청 키워드만 있는 경우 userRequest를 null로 처리
   // (전체 리뷰 모드로 동작하도록)
-  if (userRequest) {
+  if (userRequest && !isApprovalRequest) {
     const normalizedRequest = userRequest.toLowerCase().trim();
     const genericReviewKeywords = [
       'review',
@@ -289,11 +296,11 @@ function extractMentionAndRequest(commentBody) {
     }
   }
 
-  return { isMentioned: true, userRequest };
+  return { isMentioned: true, userRequest, isApprovalRequest };
 }
 
 /**
- * Issue Comment 이벤트 처리 (AI 코드 리뷰 요청)
+ * Issue Comment 이벤트 처리 (AI 코드 리뷰 요청 또는 PR 승인 요청)
  */
 async function handleIssueCommentEvent(payload, env) {
   const action = payload.action;
@@ -326,6 +333,71 @@ async function handleIssueCommentEvent(payload, env) {
     return corsResponse({ message: "Ignored: not mentioned" });
   }
 
+  const appToken = await generateGitHubAppToken(env);
+
+  // 승인 요청 처리
+  if (mention.isApprovalRequest) {
+    console.log(`PR approval requested for #${prNumber}`);
+
+    try {
+      // 👀 reaction 추가 (처리 시작 알림)
+      await addReactionToComment(
+        repoOwner,
+        repoName,
+        comment.id,
+        "issue",
+        "eyes",
+        appToken
+      );
+
+      const result = await handleApprovalRequest(
+        repoOwner,
+        repoName,
+        prNumber,
+        appToken
+      );
+
+      if (result.success) {
+        // ✅ reaction 추가 (성공)
+        await addReactionToComment(
+          repoOwner,
+          repoName,
+          comment.id,
+          "issue",
+          "+1",
+          appToken
+        );
+
+        console.log(`PR #${prNumber} approved successfully`);
+        return corsResponse({
+          message: "PR approved",
+          pr: prNumber,
+        });
+      } else {
+        // ❌ reaction 추가 (실패)
+        await addReactionToComment(
+          repoOwner,
+          repoName,
+          comment.id,
+          "issue",
+          "-1",
+          appToken
+        );
+
+        console.log(`PR #${prNumber} approval failed: ${result.error}`);
+        return corsResponse({
+          message: "PR approval failed",
+          pr: prNumber,
+          error: result.error,
+        });
+      }
+    } catch (error) {
+      console.error(`PR approval failed for #${prNumber}:`, error);
+      return errorResponse(`PR approval failed: ${error.message}`, 500);
+    }
+  }
+
+  // AI 코드 리뷰 요청 처리
   console.log(`AI review requested for PR #${prNumber}${mention.userRequest ? ` - Request: ${mention.userRequest}` : ""}`);
 
   // OPENAI_API_KEY 확인
@@ -336,8 +408,6 @@ async function handleIssueCommentEvent(payload, env) {
 
   // AI 코드 리뷰 실행
   try {
-    const appToken = await generateGitHubAppToken(env);
-
     // 👀 reaction 추가 (리뷰 시작 알림)
     await addReactionToComment(
       repoOwner,
@@ -442,5 +512,106 @@ async function handlePullRequestReviewCommentEvent(payload, env) {
   } catch (error) {
     console.error(`AI review failed for PR #${prNumber}:`, error);
     return errorResponse(`AI review failed: ${error.message}`, 500);
+  }
+}
+
+/**
+ * PR 승인 요청 처리
+ *
+ * @param {string} repoOwner - 저장소 소유자
+ * @param {string} repoName - 저장소 이름
+ * @param {number} prNumber - PR 번호
+ * @param {string} githubToken - GitHub 토큰
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function handleApprovalRequest(repoOwner, repoName, prNumber, githubToken) {
+  try {
+    // PR 정보 조회
+    const prResponse = await fetch(
+      `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}`,
+      { headers: getGitHubHeaders(githubToken) }
+    );
+
+    if (!prResponse.ok) {
+      const errorData = await safeJson(prResponse);
+      return {
+        success: false,
+        error: errorData.message || `Failed to fetch PR: ${prResponse.statusText}`,
+      };
+    }
+
+    const prData = await prResponse.json();
+
+    // Closed PR 체크
+    if (isClosedPR(prData.state)) {
+      return {
+        success: false,
+        error: "PR is closed",
+      };
+    }
+
+    // Draft PR 체크
+    if (prData.draft) {
+      return {
+        success: false,
+        error: "PR is in draft state",
+      };
+    }
+
+    // maintenance 라벨 체크
+    const labels = prData.labels.map((l) => l.name);
+    if (hasMaintenanceLabel(labels)) {
+      return {
+        success: false,
+        error: "PR has maintenance label",
+      };
+    }
+
+    // 이미 승인되었는지 확인
+    const alreadyApproved = await hasApprovedReview(
+      repoOwner,
+      repoName,
+      prNumber,
+      githubToken
+    );
+
+    if (alreadyApproved) {
+      return {
+        success: false,
+        error: "PR is already approved",
+      };
+    }
+
+    // PR 승인 실행
+    const approvalResponse = await fetch(
+      `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/reviews`,
+      {
+        method: "POST",
+        headers: {
+          ...getGitHubHeaders(githubToken),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          body: "승인되었습니다! 👍",
+          event: "APPROVE",
+        }),
+      }
+    );
+
+    if (!approvalResponse.ok) {
+      const errorData = await safeJson(approvalResponse);
+      return {
+        success: false,
+        error: errorData.message || `Approval failed: ${approvalResponse.statusText}`,
+      };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error(`handleApprovalRequest error:`, error);
+    return {
+      success: false,
+      error: error.message || "Unknown error",
+    };
   }
 }
