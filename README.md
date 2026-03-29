@@ -43,8 +43,6 @@ wrangler login
 GitHub App의 credentials를 Worker secrets에 저장:
 
 ```bash
-cd cloudflare-worker
-
 # APP_ID 설정
 wrangler secret put APP_ID
 # 프롬프트에서 GitHub App ID 입력
