@@ -286,7 +286,7 @@ wrangler deploy
 ### 커스텀 도메인
 
 - Production: https://github.dalestudy.com
-- Worker.dev: https://dalestudy.daleseo.workers.dev
+- Worker.dev: https://github.daleseo.workers.dev
 
 자세한 배포 가이드는 `DEPLOYMENT.md` 참고.
 
@@ -372,31 +372,25 @@ curl -X POST https://github.dalestudy.com/check-weeks \
 ## 코드 수정 시 주의사항
 
 1. **Octokit 사용 금지**
-
    - Cloudflare Workers에서 작동하지 않음
    - fetch API 직접 사용
 
 2. **Private Key 처리**
-
    - PKCS8 또는 PKCS1 형식 지원
    - Web Crypto API로 import
 
 3. **GraphQL 쿼리 주의**
-
    - GraphQL 쿼리에서 변수를 문자열 템플릿으로 직접 삽입 (GraphQL 변수 문법 사용 안 함)
    - 입력값 검증이 중요 (SQL Injection 스타일 취약점 방지)
 
 4. **에러 핸들링**
-
    - Worker는 에러 발생 시 500 반환
    - 로그는 `wrangler tail`로 확인
 
 5. **CORS 헤더**
-
    - 모든 응답에 CORS 헤더 포함 (`Access-Control-Allow-Origin: *`)
 
 6. **코드 재사용**
-
    - GitHub 인증 로직 (`generateGitHubAppToken`, `createJWT` 등)은 모든 기능에서 공통으로 사용
    - 새 기능 추가 시 기존 유틸리티 함수 활용
 
