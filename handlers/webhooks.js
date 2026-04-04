@@ -21,6 +21,7 @@ import {
 import { ALLOWED_REPO } from "../utils/constants.js";
 import { performAIReview, addReactionToComment } from "../utils/prReview.js";
 import { hasApprovedReview, safeJson } from "../utils/prActions.js";
+import { tagPatterns } from "./tag-patterns.js";
 
 /**
  * GitHub webhook 이벤트 처리
@@ -203,13 +204,15 @@ async function handleProjectsV2ItemEvent(payload, env) {
 }
 
 /**
- * Pull Request 이벤트 처리 (PR 생성 시 즉시 체크)
+ * Pull Request 이벤트 처리
+ * - opened/reopened: Week 설정 체크 + 알고리즘 패턴 태깅
+ * - synchronize: 알고리즘 패턴 태깅만 (Week 체크 스킵 - 이미 설정됐을 가능성 높음)
  */
 async function handlePullRequestEvent(payload, env) {
   const action = payload.action;
 
-  // opened, reopened 액션만 처리
-  if (!["opened", "reopened"].includes(action)) {
+  // opened, reopened, synchronize 액션만 처리
+  if (!["opened", "reopened", "synchronize"].includes(action)) {
     console.log(`Ignoring pull_request action: ${action}`);
     return corsResponse({ message: `Ignored: ${action}` });
   }
@@ -221,31 +224,56 @@ async function handlePullRequestEvent(payload, env) {
   const repoName = payload.repository.name;
   const prNumber = pr.number;
 
-  // maintenance 라벨 체크
+  // maintenance 라벨 체크 (early exit - GitHub API 호출 전에)
   const labels = pr.labels.map((l) => l.name);
   if (hasMaintenanceLabel(labels)) {
     console.log(`Skipping PR #${prNumber}: has maintenance label`);
     return corsResponse({ message: "Ignored: maintenance label" });
   }
 
-  console.log(`New PR opened: #${prNumber}`);
-
-  // Week 설정 확인 및 댓글 작성 (아직 Week 설정 안 되어 있을 가능성 높음)
-  // 잠시 대기 후 체크 (프로젝트 추가 시간 고려)
-  await new Promise((resolve) => setTimeout(resolve, 3000));
-
   const appToken = await generateGitHubAppToken(env);
-  const weekValue = await handleWeekComment(
-    repoOwner,
-    repoName,
-    prNumber,
-    env,
-    appToken
-  );
+  let weekValue = null;
+
+  // Week 체크는 opened/reopened일 때만 (synchronize는 이미 설정됐을 가능성 높음)
+  if (action === "opened" || action === "reopened") {
+    console.log(`New PR ${action}: #${prNumber}`);
+
+    // 잠시 대기 후 체크 (프로젝트 추가 시간 고려)
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    weekValue = await handleWeekComment(
+      repoOwner,
+      repoName,
+      prNumber,
+      env,
+      appToken
+    );
+  } else {
+    console.log(`PR synchronized: #${prNumber}`);
+  }
+
+  // 알고리즘 패턴 태깅 (OPENAI_API_KEY 있을 때만)
+  if (env.OPENAI_API_KEY) {
+    try {
+      await tagPatterns(
+        repoOwner,
+        repoName,
+        prNumber,
+        pr.head.sha,
+        pr,
+        appToken,
+        env.OPENAI_API_KEY
+      );
+    } catch (error) {
+      console.error(`[handlePullRequestEvent] tagPatterns failed: ${error.message}`);
+      // 패턴 태깅 실패는 전체 흐름을 중단시키지 않음
+    }
+  }
 
   return corsResponse({
     message: "Processed",
     pr: prNumber,
+    action,
     week: weekValue,
   });
 }

@@ -83,3 +83,93 @@ ${prDiff}
   const data = await response.json();
   return data.choices[0]?.message?.content || "Failed to generate review";
 }
+
+/**
+ * 솔루션 파일의 알고리즘 패턴 분석
+ *
+ * @param {string} fileContent - 분석할 소스 코드 내용
+ * @param {string} problemName - 문제 이름 (폴더명)
+ * @param {string} apiKey - OpenAI API 키
+ * @returns {Promise<{patterns: string[], description: string}>}
+ */
+export async function generatePatternAnalysis(fileContent, problemName, apiKey) {
+  const systemPrompt = `당신은 리트코드 문제 풀이의 알고리즘 패턴을 분석하는 전문가입니다.
+주어진 소스 코드를 분석해서, 다음 패턴 목록 중 해당되는 것만 골라주세요.
+
+감지 대상 패턴:
+- Two Pointers
+- Sliding Window
+- Fast & Slow Pointers
+- BFS
+- DFS
+- Backtracking
+- Dynamic Programming
+- Binary Search
+- Monotonic Stack
+- Heap / Priority Queue
+- Hash Map / Hash Set
+- Greedy
+- Divide and Conquer
+- Union Find
+- Trie
+- Bit Manipulation
+
+반드시 JSON 객체로만 응답하세요. 형식:
+{
+  "patterns": ["패턴1", "패턴2"],
+  "description": "이 코드가 왜 해당 패턴에 속하는지 간단한 한국어 설명 (2-3문장)"
+}
+
+규칙:
+- patterns는 위 목록의 정확한 이름만 사용
+- 해당 패턴이 없으면 빈 배열
+- 일반적으로 1-3개 패턴이면 충분
+- description은 150자 이내`;
+
+  const userPrompt = `# 문제 이름
+${problemName}
+
+# 소스 코드
+\`\`\`
+${fileContent}
+\`\`\`
+
+위 코드에 사용된 알고리즘 패턴을 분석해주세요.`;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4.1-nano",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 500,
+      temperature: 0.3,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenAI API error: ${error}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("Empty response from OpenAI");
+  }
+
+  const parsed = JSON.parse(content);
+
+  return {
+    patterns: Array.isArray(parsed.patterns) ? parsed.patterns : [],
+    description: typeof parsed.description === "string" ? parsed.description : "",
+  };
+}
