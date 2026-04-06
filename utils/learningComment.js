@@ -105,7 +105,9 @@ export function formatLearningStatusComment(
 
     for (const { category, solved, total, difficulties } of categoryProgress) {
       const bar = progressBar(solved, total);
-      let completionCell = `${solved} / ${total} (${difficulties})`;
+      let completionCell = difficulties
+        ? `${solved} / ${total} (${difficulties})`
+        : `${solved} / ${total}`;
       if (solved === 0) {
         completionCell += " ← 아직 시작 안 함";
       }
