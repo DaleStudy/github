@@ -244,7 +244,12 @@ ${truncatedContent}
     throw new Error("Empty response from OpenAI");
   }
 
-  const parsed = JSON.parse(content);
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error(`OpenAI returned invalid JSON: ${content.slice(0, 200)}`);
+  }
 
   return {
     matches: parsed.matches === true,

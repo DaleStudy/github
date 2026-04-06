@@ -69,6 +69,12 @@ export async function fetchUserSolutions(
 
   const data = await response.json();
 
+  if (data.truncated) {
+    console.warn(
+      `[fetchUserSolutions] Tree response truncated for ${repoOwner}/${repoName}. Results may be incomplete.`
+    );
+  }
+
   // Pattern: {problem-name}/{username}.{ext}
   // The path must have exactly two segments and the filename must be username.ext
   const usernamePattern = new RegExp(
@@ -120,6 +126,12 @@ export async function fetchPRSubmissions(
   }
 
   const files = await response.json();
+
+  if (files.length === 100) {
+    console.warn(
+      `[fetchPRSubmissions] PR #${prNumber} has 100+ files. Some submissions may be missed.`
+    );
+  }
 
   // Pattern: {problem-name}/{username}.{ext}
   const usernamePattern = new RegExp(

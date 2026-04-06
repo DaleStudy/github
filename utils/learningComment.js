@@ -31,7 +31,7 @@ function progressBar(completed, total, barLength = 7) {
   if (total === 0) {
     return "□".repeat(barLength);
   }
-  const filled = Math.round((completed / total) * barLength);
+  const filled = Math.min(Math.round((completed / total) * barLength), barLength);
   return "■".repeat(filled) + "□".repeat(barLength - filled);
 }
 
