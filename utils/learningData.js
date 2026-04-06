@@ -2,6 +2,8 @@
  * Learning data fetching utilities for DaleStudy GitHub App
  */
 
+import { getGitHubHeaders } from "./github.js";
+
 /**
  * Fetches problem-categories.json from the repo root via GitHub API.
  * Returns parsed JSON object, or null if the file is not found (404).
@@ -17,9 +19,8 @@ export async function fetchProblemCategories(repoOwner, repoName, appToken) {
 
   const response = await fetch(url, {
     headers: {
-      Authorization: `Bearer ${appToken}`,
+      ...getGitHubHeaders(appToken),
       Accept: "application/vnd.github.raw+json",
-      "User-Agent": "DaleStudy-GitHub-App",
     },
   });
 
@@ -57,11 +58,7 @@ export async function fetchUserSolutions(
   const url = `https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/main?recursive=1`;
 
   const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${appToken}`,
-      Accept: "application/vnd.github+json",
-      "User-Agent": "DaleStudy-GitHub-App",
-    },
+    headers: getGitHubHeaders(appToken),
   });
 
   if (!response.ok) {
@@ -113,11 +110,7 @@ export async function fetchPRSubmissions(
   const url = `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/files?per_page=100`;
 
   const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${appToken}`,
-      Accept: "application/vnd.github+json",
-      "User-Agent": "DaleStudy-GitHub-App",
-    },
+    headers: getGitHubHeaders(appToken),
   });
 
   if (!response.ok) {
