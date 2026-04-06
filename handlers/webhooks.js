@@ -22,6 +22,7 @@ import { ALLOWED_REPO } from "../utils/constants.js";
 import { performAIReview, addReactionToComment } from "../utils/prReview.js";
 import { hasApprovedReview, safeJson } from "../utils/prActions.js";
 import { tagPatterns } from "./tag-patterns.js";
+import { postLearningStatus } from "./learning-status.js";
 
 /**
  * GitHub webhook 이벤트 처리
@@ -267,6 +268,23 @@ async function handlePullRequestEvent(payload, env) {
     } catch (error) {
       console.error(`[handlePullRequestEvent] tagPatterns failed: ${error.message}`);
       // 패턴 태깅 실패는 전체 흐름을 중단시키지 않음
+    }
+  }
+
+  // 학습 현황 댓글 (OPENAI_API_KEY 있을 때만)
+  if (env.OPENAI_API_KEY) {
+    try {
+      await postLearningStatus(
+        repoOwner,
+        repoName,
+        prNumber,
+        pr.user.login,
+        appToken,
+        env.OPENAI_API_KEY
+      );
+    } catch (error) {
+      console.error(`[handlePullRequestEvent] learningStatus failed: ${error.message}`);
+      // 학습 현황 실패는 전체 흐름을 중단시키지 않음
     }
   }
 

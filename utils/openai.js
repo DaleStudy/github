@@ -173,3 +173,86 @@ ${fileContent}
     description: typeof parsed.description === "string" ? parsed.description : "",
   };
 }
+
+/**
+ * 솔루션 코드가 의도된 알고리즘 접근법과 일치하는지 분석
+ *
+ * @param {string} fileContent - 분석할 소스 코드 내용
+ * @param {string} problemName - 문제 이름 (폴더명)
+ * @param {{difficulty: string, categories: string[], intended_approach: string}} problemInfo - 문제 메타 정보
+ * @param {string} apiKey - OpenAI API 키
+ * @returns {Promise<{matches: boolean, explanation: string}>}
+ */
+export async function generateApproachAnalysis(fileContent, problemName, problemInfo, apiKey) {
+  const systemPrompt = `You are an algorithm analysis expert. Determine if code matches the intended approach.
+
+Respond with a JSON object in this exact format:
+{
+  "matches": true or false,
+  "explanation": "한국어로 1문장, 80자 이내"
+}
+
+Rules:
+- matches=true if the core data structure or algorithm matches the intended approach (does not need to be identical)
+- matches=false if brute force was used when an optimized approach was intended
+- Keep explanation to 1 sentence in Korean, 80 characters or fewer`;
+
+  const truncatedContent = fileContent.slice(0, 15000);
+
+  const userPrompt = `# 문제 이름
+${problemName}
+
+# 문제 정보
+- 난이도: ${problemInfo.difficulty}
+- 카테고리: ${(problemInfo.categories || []).join(", ")}
+- 의도된 접근법: ${problemInfo.intended_approach}
+
+# 소스 코드
+\`\`\`
+${truncatedContent}
+\`\`\`
+
+위 코드가 의도된 접근법과 일치하는지 분석해주세요.`;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4.1-nano",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 200,
+      temperature: 0.2,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenAI API error: ${error}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("Empty response from OpenAI");
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error(`OpenAI returned invalid JSON: ${content.slice(0, 200)}`);
+  }
+
+  return {
+    matches: parsed.matches === true,
+    explanation: typeof parsed.explanation === "string" ? parsed.explanation : "",
+  };
+}
