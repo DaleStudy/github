@@ -118,7 +118,7 @@ export function formatLearningStatusComment(
   lines.push("---");
   lines.push("🤖 이 댓글은 GitHub App을 통해 자동으로 작성되었습니다.");
 
-  return lines.join("\n");
+  return lines.join("\n") + "\n";
 }
 
 /**
