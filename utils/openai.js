@@ -257,3 +257,122 @@ ${truncatedContent}
     usage: data.usage ?? null,
   };
 }
+
+/**
+ * 솔루션의 시간/공간 복잡도 분석.
+ * 사용자가 코드 어딘가에 자유 포맷으로 남긴 TC/SC 주석을 함께 추출하여
+ * 비교 가능하도록 반환한다.
+ *
+ * @param {string} fileContent - 분석할 소스 코드
+ * @param {string} problemName - 문제 이름 (폴더명)
+ * @param {string} apiKey - OpenAI API 키
+ * @returns {Promise<{
+ *   hasUserAnnotation: boolean,
+ *   userTime: string|null,
+ *   userSpace: string|null,
+ *   actualTime: string,
+ *   actualSpace: string,
+ *   matches: { time: boolean, space: boolean },
+ *   feedback: string,
+ *   suggestion: string
+ * }>}
+ */
+export async function generateComplexityAnalysis(fileContent, problemName, apiKey) {
+  const systemPrompt = `당신은 알고리즘 풀이의 시간/공간 복잡도를 분석하는 전문가입니다.
+
+작업:
+1. 코드의 실제 시간/공간 복잡도를 Big-O 표기로 계산하세요 (actualTime, actualSpace).
+2. 코드 어디든(상단/하단/중간) 사용자가 남긴 시간복잡도/공간복잡도 주석이 있는지 찾으세요.
+   주석은 자유 포맷이며 언어별 주석 스타일(//, #, /* */, --, """)과 한/영 키워드가 섞일 수 있습니다.
+   예: "// TC: O(n)", "# 시간복잡도: O(n log n)", "/* Space: O(1) */", "// Time: O(n^2)"
+   - 찾았으면 hasUserAnnotation=true 로 두고 userTime/userSpace 에 사용자가 적은 값을 그대로 옮기세요.
+   - 한쪽만 적혀 있으면 다른 쪽은 null.
+   - 전혀 없으면 hasUserAnnotation=false, userTime=null, userSpace=null.
+3. matches.time / matches.space:
+   - hasUserAnnotation=false 면 둘 다 false.
+   - 사용자 값이 있는 항목만 actual 과 비교하여 일치 여부를 boolean 으로 반환.
+4. feedback (한국어 1-3문장):
+   - 일치하면: 칭찬 + 핵심 근거 짧게.
+   - 불일치하면: 어디가 왜 다른지 설명 + "다시 풀어보시는 것을 권장드립니다" 톤.
+   - 주석이 없으면: 풀이 핵심 근거 + 끝에 "풀이에 시간/공간 복잡도를 주석으로 남겨보세요" 안내.
+5. suggestion (한국어):
+   - 의미 있는 한 단계 이상 개선 여지가 있을 때만 제안 (예: O(n^2) → O(n)).
+   - 문제 제약을 모를 수 있으므로 단정 금지. "고려해볼 만한 대안:" 톤.
+   - 개선 여지가 없으면 "현재 구현이 적절해 보입니다." 한 문장.
+   - 항상 string (빈 문자열 아님).
+
+반드시 아래 JSON 스키마로만 응답:
+{
+  "hasUserAnnotation": boolean,
+  "userTime": string|null,
+  "userSpace": string|null,
+  "actualTime": string,
+  "actualSpace": string,
+  "matches": { "time": boolean, "space": boolean },
+  "feedback": string,
+  "suggestion": string
+}`;
+
+  const truncated = fileContent.slice(0, 15000);
+
+  const userPrompt = `# 문제 이름
+${problemName}
+
+# 소스 코드
+\`\`\`
+${truncated}
+\`\`\`
+
+위 코드의 시간/공간 복잡도를 분석하고, 사용자가 남긴 복잡도 주석이 있다면 함께 추출해주세요.`;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4.1-nano",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 600,
+      temperature: 0.2,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenAI API error: ${error}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("Empty response from OpenAI");
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error(`OpenAI returned invalid JSON: ${content.slice(0, 200)}`);
+  }
+
+  return {
+    hasUserAnnotation: parsed.hasUserAnnotation === true,
+    userTime: typeof parsed.userTime === "string" ? parsed.userTime : null,
+    userSpace: typeof parsed.userSpace === "string" ? parsed.userSpace : null,
+    actualTime: typeof parsed.actualTime === "string" ? parsed.actualTime : "?",
+    actualSpace: typeof parsed.actualSpace === "string" ? parsed.actualSpace : "?",
+    matches: {
+      time: parsed.matches?.time === true,
+      space: parsed.matches?.space === true,
+    },
+    feedback: typeof parsed.feedback === "string" ? parsed.feedback : "",
+    suggestion: typeof parsed.suggestion === "string" ? parsed.suggestion : "",
+  };
+}
