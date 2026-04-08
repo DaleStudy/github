@@ -107,6 +107,8 @@ export async function postLearningStatus(
 
   // 4. 제출 파일별 AI 분석
   const submissionResults = [];
+  const totalUsage = { prompt_tokens: 0, completion_tokens: 0 };
+
   for (const submission of submissions) {
     const problemInfo = categories[submission.problemName];
 
@@ -145,6 +147,11 @@ export async function postLearningStatus(
         openaiApiKey
       );
 
+      if (analysis.usage) {
+        totalUsage.prompt_tokens += analysis.usage.prompt_tokens ?? 0;
+        totalUsage.completion_tokens += analysis.usage.completion_tokens ?? 0;
+      }
+
       submissionResults.push({
         problemName: submission.problemName,
         difficulty: problemInfo.difficulty,
@@ -164,6 +171,8 @@ export async function postLearningStatus(
     }
   }
 
+  const hasUsage = totalUsage.prompt_tokens > 0 || totalUsage.completion_tokens > 0;
+
   // 5. 카테고리별 진행도 계산
   const totalProblems = Object.keys(categories).length;
   const categoryProgress = buildCategoryProgress(categories, solvedProblems);
@@ -178,7 +187,14 @@ export async function postLearningStatus(
   );
 
   // 7. 댓글 생성 또는 업데이트
-  await upsertLearningStatusComment(repoOwner, repoName, prNumber, commentBody, appToken);
+  await upsertLearningStatusComment(
+    repoOwner,
+    repoName,
+    prNumber,
+    commentBody,
+    appToken,
+    hasUsage ? totalUsage : null
+  );
 
   // 8. 결과 반환
   const matchedCount = submissionResults.filter((r) => r.matches === true).length;

@@ -10,6 +10,95 @@ import { getGitHubHeaders } from "./github.js";
 const COMMENT_MARKER = "<!-- dalestudy-learning-status -->";
 
 /**
+ * Hidden marker for embedding cumulative usage data in the comment.
+ * Format: <!-- usage-data: {"prompt":N,"completion":N,"requests":N} -->
+ */
+const USAGE_DATA_RE = /<!-- usage-data: ({.*?}) -->/;
+
+/** gpt-4.1-nano pricing (USD per token) */
+const INPUT_COST_PER_TOKEN = 0.10 / 1_000_000;
+const OUTPUT_COST_PER_TOKEN = 0.40 / 1_000_000;
+
+/**
+ * Calculates cost in USD from token counts.
+ *
+ * @param {number} promptTokens
+ * @param {number} completionTokens
+ * @returns {number}
+ */
+function calcCost(promptTokens, completionTokens) {
+  return promptTokens * INPUT_COST_PER_TOKEN + completionTokens * OUTPUT_COST_PER_TOKEN;
+}
+
+/**
+ * Formats a number with thousand-separating commas.
+ *
+ * @param {number} n
+ * @returns {string}
+ */
+function fmt(n) {
+  return n.toLocaleString("en-US");
+}
+
+/**
+ * Parses per-request usage history embedded in an existing comment body.
+ *
+ * @param {string|undefined} body
+ * @returns {Array<{ prompt: number, completion: number }>}
+ */
+function parseUsageFromComment(body) {
+  if (!body) return [];
+  const match = body.match(USAGE_DATA_RE);
+  if (!match) return [];
+  try {
+    const parsed = JSON.parse(match[1]);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Builds the usage footer section (per-request history table + hidden data marker).
+ *
+ * @param {Array<{ prompt: number, completion: number }>} history - all requests including current (latest last)
+ * @returns {string}
+ */
+function formatUsageSection(history) {
+  const lines = [];
+  lines.push("<details>");
+  lines.push("<summary>🔢 API 사용량 (gpt-4.1-nano)</summary>");
+  lines.push("");
+  lines.push("| 요청 | 입력 토큰 | 출력 토큰 | 합계 | 비용 |");
+  lines.push("|---:|---:|---:|---:|---:|");
+
+  let totalPrompt = 0;
+  let totalCompletion = 0;
+
+  for (let i = 0; i < history.length; i++) {
+    const { prompt, completion } = history[i];
+    const total = prompt + completion;
+    const cost = calcCost(prompt, completion);
+    lines.push(`| #${i + 1} | ${fmt(prompt)} | ${fmt(completion)} | ${fmt(total)} | $${cost.toFixed(6)} |`);
+    totalPrompt += prompt;
+    totalCompletion += completion;
+  }
+
+  if (history.length > 1) {
+    const totalCost = calcCost(totalPrompt, totalCompletion);
+    lines.push(`| **합계** | **${fmt(totalPrompt)}** | **${fmt(totalCompletion)}** | **${fmt(totalPrompt + totalCompletion)}** | **$${totalCost.toFixed(6)}** |`);
+  }
+
+  lines.push("");
+  lines.push("</details>");
+
+  // Embed history for future parsing
+  lines.push(`<!-- usage-data: ${JSON.stringify(history)} -->`);
+
+  return lines.join("\n");
+}
+
+/**
  * Returns true when `comment` is a Bot comment containing our marker.
  *
  * @param {{ user?: { type?: string }, body?: string }} comment
@@ -129,11 +218,15 @@ export function formatLearningStatusComment(
  * Searches through the first 100 issue comments for an existing Bot comment
  * that contains COMMENT_MARKER. If found, PATCHes it; otherwise POSTs a new one.
  *
+ * When `currentUsage` is provided, appends a collapsible usage/cost section to
+ * the comment and accumulates it with any previously stored cumulative totals.
+ *
  * @param {string} repoOwner
  * @param {string} repoName
  * @param {number} prNumber
  * @param {string} commentBody
  * @param {string} appToken
+ * @param {{ prompt_tokens: number, completion_tokens: number }|null} [currentUsage]
  * @returns {Promise<void>}
  */
 export async function upsertLearningStatusComment(
@@ -141,7 +234,8 @@ export async function upsertLearningStatusComment(
   repoName,
   prNumber,
   commentBody,
-  appToken
+  appToken,
+  currentUsage = null
 ) {
   const baseUrl = `https://api.github.com/repos/${repoOwner}/${repoName}`;
 
@@ -159,6 +253,16 @@ export async function upsertLearningStatusComment(
 
   const comments = await listResponse.json();
   const existing = comments.find(isLearningStatusComment);
+
+  // Append usage section when token data is available
+  if (currentUsage) {
+    const prevHistory = parseUsageFromComment(existing?.body);
+    const history = [
+      ...prevHistory,
+      { prompt: currentUsage.prompt_tokens, completion: currentUsage.completion_tokens },
+    ];
+    commentBody = commentBody.trimEnd() + "\n\n" + formatUsageSection(history) + "\n";
+  }
 
   if (existing) {
     // Update existing comment
