@@ -80,21 +80,16 @@ async function fetchActiveCohortProjectId(repoOwner, repoName, appToken) {
 }
 
 /**
- * 기수 프로젝트의 아이템을 페이지네이션하며 해당 유저가 머지한 PR의
- * 파일 경로를 GraphQL로 한 번에 조회하여 풀이한 문제 이름 목록을 반환한다.
- *
- * PR별 REST 호출 없이 GraphQL 응답에 files를 포함시켜 subrequest를 절약한다.
+ * 기수 프로젝트에서 해당 유저가 머지한 PR 번호 목록을 반환한다.
+ * 프로젝트 아이템을 페이지네이션하며 author.login으로 필터링한다.
  *
  * @param {string} projectId
  * @param {string} username
  * @param {string} appToken
- * @returns {Promise<string[]>}
+ * @returns {Promise<number[]>}
  */
-async function fetchCohortSolvedFromProject(projectId, username, appToken) {
-  const usernamePattern = new RegExp(
-    `^([^/]+)/${escapeRegExp(username)}\\.[^/]+$`
-  );
-  const problemNames = new Set();
+async function fetchUserMergedPRsInProject(projectId, username, appToken) {
+  const prNumbers = [];
   let cursor = null;
 
   while (true) {
@@ -108,11 +103,9 @@ async function fetchCohortSolvedFromProject(projectId, username, appToken) {
               nodes {
                 content {
                   ... on PullRequest {
+                    number
                     state
                     author { login }
-                    files(first: 100) {
-                      nodes { path }
-                    }
                   }
                 }
               }
@@ -131,12 +124,7 @@ async function fetchCohortSolvedFromProject(projectId, username, appToken) {
         pr?.state === "MERGED" &&
         pr?.author?.login?.toLowerCase() === username.toLowerCase()
       ) {
-        for (const file of pr.files?.nodes || []) {
-          const match = file.path.match(usernamePattern);
-          if (match) {
-            problemNames.add(match[1]);
-          }
-        }
+        prNumbers.push(pr.number);
       }
     }
 
@@ -144,7 +132,7 @@ async function fetchCohortSolvedFromProject(projectId, username, appToken) {
     cursor = pageInfo.endCursor;
   }
 
-  return Array.from(problemNames);
+  return prNumbers;
 }
 
 /**
@@ -177,17 +165,31 @@ export async function fetchCohortUserSolutions(
     return fetchUserSolutions(repoOwner, repoName, username, appToken);
   }
 
-  const problems = await fetchCohortSolvedFromProject(
+  const prNumbers = await fetchUserMergedPRsInProject(
     projectId,
     username,
     appToken
   );
 
   console.log(
-    `[fetchCohortUserSolutions] ${username} solved ${problems.length} problems in current cohort`
+    `[fetchCohortUserSolutions] ${username} has ${prNumbers.length} merged PRs in current cohort`
   );
 
-  return problems;
+  const problemNames = new Set();
+  for (const prNumber of prNumbers) {
+    const submissions = await fetchPRSubmissions(
+      repoOwner,
+      repoName,
+      prNumber,
+      username,
+      appToken
+    );
+    for (const { problemName } of submissions) {
+      problemNames.add(problemName);
+    }
+  }
+
+  return Array.from(problemNames);
 }
 
 /**
