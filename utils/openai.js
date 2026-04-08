@@ -259,6 +259,119 @@ ${truncatedContent}
 }
 
 /**
+ * 여러 솔루션 파일의 접근법 일치 여부를 한 번의 API 호출로 일괄 분석.
+ * subrequest 수를 줄이기 위해 파일당 개별 호출 대신 배치로 처리한다.
+ *
+ * @param {Array<{problemName: string, fileContent: string, problemInfo: object}>} items
+ * @param {string} apiKey - OpenAI API 키
+ * @returns {Promise<{results: Array<{matches: boolean, explanation: string}>, usage: object|null}>}
+ */
+export async function generateBatchApproachAnalysis(items, apiKey) {
+  if (items.length === 0) return { results: [], usage: null };
+
+  // 단건이면 기존 함수 위임
+  if (items.length === 1) {
+    const { fileContent, problemName, problemInfo } = items[0];
+    const result = await generateApproachAnalysis(fileContent, problemName, problemInfo, apiKey);
+    return {
+      results: [{ matches: result.matches, explanation: result.explanation }],
+      usage: result.usage,
+    };
+  }
+
+  const systemPrompt = `You are an algorithm analysis expert. You will receive multiple problems. For each one, determine if the submitted code matches the intended approach.
+
+Respond with a JSON object containing a "results" array with exactly ${items.length} entries, in the same order as the input:
+{
+  "results": [
+    { "matches": true, "explanation": "한국어 1문장, 80자 이내" },
+    ...
+  ]
+}
+
+Rules:
+- matches=true if the core data structure or algorithm matches the intended approach
+- matches=false if brute force was used when an optimized approach was intended
+- Keep each explanation to 1 sentence in Korean, 80 characters or fewer
+- You MUST return exactly ${items.length} results`;
+
+  const MAX_BATCH_FILE_SIZE = 5000;
+
+  const problemSections = items.map(({ problemName, fileContent, problemInfo }, i) => {
+    const truncated = fileContent.slice(0, MAX_BATCH_FILE_SIZE);
+    return `## 문제 ${i + 1}: ${problemName}
+- 난이도: ${problemInfo.difficulty}
+- 카테고리: ${(problemInfo.categories || []).join(", ")}
+- 의도된 접근법: ${problemInfo.intended_approach}
+
+\`\`\`
+${truncated}
+\`\`\``;
+  });
+
+  const userPrompt = problemSections.join("\n\n") +
+    `\n\n위 ${items.length}개 코드가 각각 의도된 접근법과 일치하는지 분석해주세요.`;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4.1-nano",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 200 * items.length,
+      temperature: 0.2,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenAI batch API error: ${error}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("Empty response from OpenAI batch analysis");
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error(`OpenAI returned invalid JSON: ${content.slice(0, 200)}`);
+  }
+
+  const rawResults = parsed.results;
+  if (!Array.isArray(rawResults)) {
+    throw new Error(`OpenAI did not return a results array`);
+  }
+
+  if (rawResults.length !== items.length) {
+    console.warn(
+      `[generateBatchApproachAnalysis] Expected ${items.length} results, got ${rawResults.length}`
+    );
+  }
+
+  const results = items.map((_, i) => {
+    const r = rawResults[i];
+    return {
+      matches: r?.matches === true,
+      explanation: typeof r?.explanation === "string" ? r.explanation : "",
+    };
+  });
+
+  return { results, usage: data.usage ?? null };
+}
+
+/**
  * 솔루션의 시간/공간 복잡도 분석.
  * 사용자가 코드 어딘가에 자유 포맷으로 남긴 TC/SC 주석을 함께 추출하여
  * 비교 가능하도록 반환한다.
