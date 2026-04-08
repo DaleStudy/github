@@ -7,7 +7,7 @@
 
 import {
   fetchProblemCategories,
-  fetchCohortUserSolutions,
+  fetchUserSolutions,
   fetchPRSubmissions,
 } from "../utils/learningData.js";
 import { generateApproachAnalysis } from "../utils/openai.js";
@@ -88,10 +88,10 @@ export async function postLearningStatus(
     return { skipped: "no-categories-file" };
   }
 
-  // 2. 이번 기수에서 사용자가 제출한 풀이 목록 조회
-  const solvedProblems = await fetchCohortUserSolutions(repoOwner, repoName, username, appToken);
+  // 2. 사용자의 누적 풀이 목록 조회
+  const solvedProblems = await fetchUserSolutions(repoOwner, repoName, username, appToken);
   console.log(
-    `[learningStatus] PR #${prNumber}: ${username} has ${solvedProblems.length} solutions in current cohort`
+    `[learningStatus] PR #${prNumber}: ${username} has ${solvedProblems.length} cumulative solutions`
   );
 
   // 3. 이번 PR 제출 파일 목록 조회
