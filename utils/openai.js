@@ -254,5 +254,6 @@ ${truncatedContent}
   return {
     matches: parsed.matches === true,
     explanation: typeof parsed.explanation === "string" ? parsed.explanation : "",
+    usage: data.usage ?? null,
   };
 }
