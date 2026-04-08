@@ -10,7 +10,7 @@ import {
   fetchCohortUserSolutions,
   fetchPRSubmissions,
 } from "../utils/learningData.js";
-import { generateApproachAnalysis } from "../utils/openai.js";
+import { generateBatchApproachAnalysis } from "../utils/openai.js";
 import {
   formatLearningStatusComment,
   upsertLearningStatusComment,
@@ -105,9 +105,10 @@ export async function postLearningStatus(
     `[learningStatus] PR #${prNumber}: analyzing ${submissions.length} submission(s) for ${username}`
   );
 
-  // 4. 제출 파일별 AI 분석
+  // 4. 제출 파일 코드 다운로드 (N회 fetch)
   const submissionResults = [];
-  const totalUsage = { prompt_tokens: 0, completion_tokens: 0 };
+  const batchItems = [];
+  const batchIndices = [];
 
   for (const submission of submissions) {
     const problemInfo = categories[submission.problemName];
@@ -126,7 +127,6 @@ export async function postLearningStatus(
     }
 
     try {
-      // 파일 원본 내용 가져오기
       const rawResponse = await fetch(submission.rawUrl);
       if (!rawResponse.ok) {
         throw new Error(`Failed to fetch raw file: ${rawResponse.status} ${rawResponse.statusText}`);
@@ -140,27 +140,18 @@ export async function postLearningStatus(
         );
       }
 
-      const analysis = await generateApproachAnalysis(
-        fileContent,
-        submission.problemName,
-        problemInfo,
-        openaiApiKey
-      );
-
-      if (analysis.usage) {
-        totalUsage.prompt_tokens += analysis.usage.prompt_tokens ?? 0;
-        totalUsage.completion_tokens += analysis.usage.completion_tokens ?? 0;
-      }
-
+      const idx = submissionResults.length;
       submissionResults.push({
         problemName: submission.problemName,
         difficulty: problemInfo.difficulty,
-        matches: analysis.matches,
-        explanation: analysis.explanation,
+        matches: null,
+        explanation: "",
       });
+      batchItems.push({ problemName: submission.problemName, fileContent, problemInfo });
+      batchIndices.push(idx);
     } catch (error) {
       console.error(
-        `[learningStatus] Failed to analyze "${submission.problemName}": ${error.message}`
+        `[learningStatus] Failed to fetch "${submission.problemName}": ${error.message}`
       );
       submissionResults.push({
         problemName: submission.problemName,
@@ -171,13 +162,33 @@ export async function postLearningStatus(
     }
   }
 
-  const hasUsage = totalUsage.prompt_tokens > 0 || totalUsage.completion_tokens > 0;
+  // 5. AI 일괄 분석 (1회 OpenAI 호출로 모든 제출 파일 분석)
+  let totalUsage = null;
+  if (batchItems.length > 0) {
+    try {
+      console.log(
+        `[learningStatus] PR #${prNumber}: batch analyzing ${batchItems.length} file(s) via OpenAI`
+      );
+      const { results: batchResults, usage } = await generateBatchApproachAnalysis(batchItems, openaiApiKey);
+      totalUsage = usage;
+      for (let i = 0; i < batchResults.length; i++) {
+        submissionResults[batchIndices[i]].matches = batchResults[i].matches;
+        submissionResults[batchIndices[i]].explanation = batchResults[i].explanation;
+      }
+    } catch (error) {
+      console.error(
+        `[learningStatus] Batch analysis failed: ${error.message}`
+      );
+    }
+  }
 
-  // 5. 카테고리별 진행도 계산
+  const hasUsage = totalUsage != null;
+
+  // 6. 카테고리별 진행도 계산
   const totalProblems = Object.keys(categories).length;
   const categoryProgress = buildCategoryProgress(categories, solvedProblems);
 
-  // 6. 댓글 본문 포맷
+  // 7. 댓글 본문 포맷
   const commentBody = formatLearningStatusComment(
     username,
     submissionResults,
@@ -186,7 +197,7 @@ export async function postLearningStatus(
     categoryProgress
   );
 
-  // 7. 댓글 생성 또는 업데이트
+  // 8. 댓글 생성 또는 업데이트
   await upsertLearningStatusComment(
     repoOwner,
     repoName,
@@ -196,7 +207,7 @@ export async function postLearningStatus(
     hasUsage ? totalUsage : null
   );
 
-  // 8. 결과 반환
+  // 9. 결과 반환
   const matchedCount = submissionResults.filter((r) => r.matches === true).length;
   return { analyzed: submissionResults.length, matched: matchedCount };
 }
