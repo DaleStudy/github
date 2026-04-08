@@ -328,6 +328,11 @@ wrangler secret put OPENAI_API_KEY
 
 # Webhook Secret (선택사항)
 wrangler secret put WEBHOOK_SECRET
+
+# Internal Dispatch Secret (AI 핸들러 Worker 분리용, 권장)
+# 설정하면 tagPatterns, learningStatus, complexityAnalysis가
+# 별도 Worker 호출로 디스패치되어 각각 독립적인 subrequest 예산을 가짐
+wrangler secret put INTERNAL_SECRET
 ```
 
 ### 5. GitHub App 설치
