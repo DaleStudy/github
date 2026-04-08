@@ -184,11 +184,11 @@ export async function postLearningStatus(
 
   const hasUsage = totalUsage != null;
 
-  // 5. 카테고리별 진행도 계산
+  // 6. 카테고리별 진행도 계산
   const totalProblems = Object.keys(categories).length;
   const categoryProgress = buildCategoryProgress(categories, solvedProblems);
 
-  // 6. 댓글 본문 포맷
+  // 7. 댓글 본문 포맷
   const commentBody = formatLearningStatusComment(
     username,
     submissionResults,
@@ -197,7 +197,7 @@ export async function postLearningStatus(
     categoryProgress
   );
 
-  // 7. 댓글 생성 또는 업데이트
+  // 8. 댓글 생성 또는 업데이트
   await upsertLearningStatusComment(
     repoOwner,
     repoName,
@@ -207,7 +207,7 @@ export async function postLearningStatus(
     hasUsage ? totalUsage : null
   );
 
-  // 8. 결과 반환
+  // 9. 결과 반환
   const matchedCount = submissionResults.filter((r) => r.matches === true).length;
   return { analyzed: submissionResults.length, matched: matchedCount };
 }

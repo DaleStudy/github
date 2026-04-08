@@ -275,7 +275,7 @@ export async function generateBatchApproachAnalysis(items, apiKey) {
     const result = await generateApproachAnalysis(fileContent, problemName, problemInfo, apiKey);
     return {
       results: [{ matches: result.matches, explanation: result.explanation }],
-      usage: result.usage,
+      usage: result.usage ?? null,
     };
   }
 
