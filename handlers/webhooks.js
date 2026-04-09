@@ -23,6 +23,7 @@ import { performAIReview, addReactionToComment } from "../utils/prReview.js";
 import { hasApprovedReview, safeJson } from "../utils/prActions.js";
 import { tagPatterns } from "./tag-patterns.js";
 import { postLearningStatus } from "./learning-status.js";
+import { analyzeComplexity } from "./complexity-analysis.js";
 
 /**
  * GitHub webhook 이벤트 처리
@@ -285,6 +286,23 @@ async function handlePullRequestEvent(payload, env) {
     } catch (error) {
       console.error(`[handlePullRequestEvent] learningStatus failed: ${error.message}`);
       // 학습 현황 실패는 전체 흐름을 중단시키지 않음
+    }
+  }
+
+  // 시간/공간 복잡도 분석 (OPENAI_API_KEY 있을 때만)
+  if (env.OPENAI_API_KEY) {
+    try {
+      await analyzeComplexity(
+        repoOwner,
+        repoName,
+        prNumber,
+        pr,
+        appToken,
+        env.OPENAI_API_KEY
+      );
+    } catch (error) {
+      console.error(`[handlePullRequestEvent] complexity analysis failed: ${error.message}`);
+      // 복잡도 분석 실패는 전체 흐름을 중단시키지 않음
     }
   }
 
