@@ -205,9 +205,34 @@ async function handleProjectsV2ItemEvent(payload, env) {
 }
 
 /**
+ * Compare API로 두 커밋 사이에 변경된 파일명 목록 조회
+ *
+ * @param {string} repoOwner
+ * @param {string} repoName
+ * @param {string} baseSha - 이전 커밋 SHA
+ * @param {string} headSha - 새 커밋 SHA
+ * @param {string} appToken
+ * @returns {Promise<string[]|null>} 변경된 파일명 배열 (실패 시 null → 전체 분석 fallback)
+ */
+async function getChangedFilenames(repoOwner, repoName, baseSha, headSha, appToken) {
+  const response = await fetch(
+    `https://api.github.com/repos/${repoOwner}/${repoName}/compare/${baseSha}...${headSha}`,
+    { headers: getGitHubHeaders(appToken) }
+  );
+
+  if (!response.ok) {
+    console.error(`[getChangedFilenames] Compare API failed: ${response.status}`);
+    return null;
+  }
+
+  const data = await response.json();
+  return (data.files || []).map((f) => f.filename);
+}
+
+/**
  * Pull Request 이벤트 처리
- * - opened/reopened: Week 설정 체크 + 알고리즘 패턴 태깅
- * - synchronize: 알고리즘 패턴 태깅만 (Week 체크 스킵 - 이미 설정됐을 가능성 높음)
+ * - opened/reopened: Week 설정 체크 + 알고리즘 패턴 태깅 (전체 파일)
+ * - synchronize: 알고리즘 패턴 태깅만 (변경된 파일만, Week 체크 스킵)
  */
 async function handlePullRequestEvent(payload, env) {
   const action = payload.action;
@@ -256,6 +281,21 @@ async function handlePullRequestEvent(payload, env) {
   // 알고리즘 패턴 태깅 (OPENAI_API_KEY 있을 때만)
   if (env.OPENAI_API_KEY) {
     try {
+      // synchronize일 때만 변경 파일 목록 추출 (최적화: #7)
+      let changedFilenames = null;
+      if (action === "synchronize" && payload.before && payload.after) {
+        changedFilenames = await getChangedFilenames(
+          repoOwner,
+          repoName,
+          payload.before,
+          payload.after,
+          appToken
+        );
+        console.log(
+          `[handlePullRequestEvent] synchronize: ${changedFilenames?.length ?? "fallback(all)"} files changed between ${payload.before.slice(0, 7)}...${payload.after.slice(0, 7)}`
+        );
+      }
+
       await tagPatterns(
         repoOwner,
         repoName,
@@ -263,7 +303,8 @@ async function handlePullRequestEvent(payload, env) {
         pr.head.sha,
         pr,
         appToken,
-        env.OPENAI_API_KEY
+        env.OPENAI_API_KEY,
+        changedFilenames
       );
     } catch (error) {
       console.error(`[handlePullRequestEvent] tagPatterns failed: ${error.message}`);

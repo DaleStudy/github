@@ -23,6 +23,7 @@ const MAX_FILE_SIZE = 20000; // 20K 문자 제한 (OpenAI 토큰 안전장치)
  * @param {object} prData - PR 객체 (draft, labels 포함)
  * @param {string} appToken - GitHub App installation token
  * @param {string} openaiApiKey
+ * @param {string[]|null} [changedFilenames=null] - synchronize 시 변경된 파일명 목록 (null이면 전체 분석)
  */
 export async function tagPatterns(
   repoOwner,
@@ -31,7 +32,8 @@ export async function tagPatterns(
   headSha,
   prData,
   appToken,
-  openaiApiKey
+  openaiApiKey,
+  changedFilenames = null
 ) {
   // 2-1. Skip 조건
   if (prData.draft === true) {
@@ -58,22 +60,34 @@ export async function tagPatterns(
   }
 
   const allFiles = await filesResponse.json();
-  const solutionFiles = allFiles.filter(
+  let solutionFiles = allFiles.filter(
     (f) =>
       (f.status === "added" || f.status === "modified") &&
       SOLUTION_PATH_REGEX.test(f.filename)
   );
 
+  // changedFilenames가 제공되면 해당 파일만 대상으로 좁힘 (synchronize 최적화)
+  if (changedFilenames !== null) {
+    const changedSet = new Set(changedFilenames);
+    solutionFiles = solutionFiles.filter((f) => changedSet.has(f.filename));
+    console.log(
+      `[tagPatterns] PR #${prNumber}: narrowed to ${solutionFiles.length} changed solution files`
+    );
+  }
+
   console.log(
-    `[tagPatterns] PR #${prNumber}: ${allFiles.length} files, ${solutionFiles.length} solution files`
+    `[tagPatterns] PR #${prNumber}: ${allFiles.length} total files, ${solutionFiles.length} solution files to analyze`
   );
 
   if (solutionFiles.length === 0) {
     return { skipped: "no-solution-files" };
   }
 
-  // 2-3. 기존 Bot 패턴 태그 코멘트 삭제
-  await deletePreviousPatternComments(repoOwner, repoName, prNumber, appToken);
+  // 2-3. 기존 Bot 패턴 태그 코멘트 삭제 (변경 파일만)
+  const targetFilenames = solutionFiles.map((f) => f.filename);
+  await deletePreviousPatternComments(
+    repoOwner, repoName, prNumber, appToken, targetFilenames
+  );
 
   // 2-4. 파일별 OpenAI 분석 + 코멘트 작성 (각 파일 try/catch 래핑)
   const results = [];
@@ -101,13 +115,16 @@ export async function tagPatterns(
 }
 
 /**
- * 기존 Bot 패턴 태그 코멘트 삭제 (다른 사용자 코멘트는 절대 건드리지 않음)
+ * 기존 Bot 패턴 태그 코멘트 삭제 (대상 파일만, 다른 사용자 코멘트는 절대 건드리지 않음)
+ *
+ * @param {string[]} targetFilenames - 삭제 대상 파일명 목록
  */
 async function deletePreviousPatternComments(
   repoOwner,
   repoName,
   prNumber,
-  appToken
+  appToken,
+  targetFilenames
 ) {
   const response = await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/comments?per_page=100`,
@@ -122,8 +139,12 @@ async function deletePreviousPatternComments(
   }
 
   const comments = await response.json();
+  const targetSet = new Set(targetFilenames);
   const botPatternComments = comments.filter(
-    (c) => c.user?.type === "Bot" && c.body?.includes(COMMENT_MARKER)
+    (c) =>
+      c.user?.type === "Bot" &&
+      c.body?.includes(COMMENT_MARKER) &&
+      targetSet.has(c.path)
   );
 
   for (const comment of botPatternComments) {
@@ -149,7 +170,7 @@ async function deletePreviousPatternComments(
   }
 
   console.log(
-    `[tagPatterns] Deleted ${botPatternComments.length} previous pattern comments`
+    `[tagPatterns] Deleted ${botPatternComments.length} previous pattern comments for ${targetFilenames.length} files`
   );
 }
 
