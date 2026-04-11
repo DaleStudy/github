@@ -6,6 +6,7 @@ import { generateGitHubAppToken, getGitHubHeaders } from "../utils/github.js";
 import { corsResponse, errorResponse } from "../utils/cors.js";
 import { handleWeekComment } from "../utils/prWeeks.js";
 import { validateOrganization, hasMaintenanceLabel } from "../utils/validation.js";
+import { ALLOWED_REPO } from "../utils/constants.js";
 
 /**
  * 모든 Open PR의 Week 설정을 검사하고 자동으로 댓글 작성/삭제
@@ -27,6 +28,11 @@ export async function checkWeeks(request, env) {
     // DaleStudy organization만 허용
     if (!validateOrganization(repoOwner)) {
       return errorResponse(`Unauthorized organization: ${repoOwner}`, 403);
+    }
+
+    // 허용된 repository만 처리
+    if (repo_name !== ALLOWED_REPO) {
+      return errorResponse(`Unauthorized repository: ${repo_name}`, 403);
     }
 
     // GitHub App Token 생성

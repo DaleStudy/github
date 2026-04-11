@@ -125,6 +125,12 @@ async function handleProjectsV2ItemEvent(payload, env) {
 
   const { number: prNumber, owner: repoOwner, repo: repoName } = prInfo;
 
+  // 허용된 repository만 처리 (projects_v2_item 이벤트는 payload에 repository가 없어 상위 필터를 우회함)
+  if (repoName !== ALLOWED_REPO) {
+    console.log(`Ignoring projects_v2_item for repository: ${repoName}`);
+    return corsResponse({ message: `Ignored: ${repoName}` });
+  }
+
   // PR 상태 확인 (closed PR, maintenance 라벨 예외)
   const prResponse = await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}`,
