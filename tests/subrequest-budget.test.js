@@ -36,12 +36,12 @@ function okText(text) {
   });
 }
 
-describe("subrequest budget — per handler invocation (5 changed files)", () => {
+describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("tagPatterns makes ≤ 50 subrequests (expected 22: 1 files + 1 list comments + 5 deletes + 5×(raw+openai+post))", async () => {
+  it("tagPatterns 는 50 회 이하 subrequest 를 호출한다 (예상 22: files 1 + 코멘트 목록 1 + DELETE 5 + 5×(raw+openai+post))", async () => {
     globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
       const urlStr = typeof url === "string" ? url : url.url;
       const method = opts?.method ?? "GET";
@@ -110,7 +110,7 @@ describe("subrequest budget — per handler invocation (5 changed files)", () =>
     expect(fetchCount).toBeLessThan(50);
   });
 
-  it("postLearningStatus makes ≤ 50 subrequests (expected 15: 1 categories + 1 tree + 1 PR files + 5×(raw+openai) + 1 list issue comments + 1 post)", async () => {
+  it("postLearningStatus 는 50 회 이하 subrequest 를 호출한다 (예상 15: categories 1 + tree 1 + PR files 1 + 5×(raw+openai) + 이슈 코멘트 목록 1 + POST 1)", async () => {
     const categories = Object.fromEntries(
       SOLUTION_FILES.map((_, i) => [
         `problem-${i + 1}`,
