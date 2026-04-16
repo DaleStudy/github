@@ -39,6 +39,8 @@ import {
   removeWarningComment,
   handleWeekComment,
 } from "../utils/prWeeks.js";
+import { tagPatterns } from "./tag-patterns.js";
+import { postLearningStatus } from "./learning-status.js";
 
 function makeRequest(eventType, payload) {
   return new Request("https://example.com/webhooks", {
@@ -231,5 +233,126 @@ describe("webhook repo filtering", () => {
 
       expect(body.message).toBe("Ignored: push");
     });
+  });
+});
+
+describe("handlePullRequestEvent — AI handler dispatch", () => {
+  const basePRPayload = {
+    action: "synchronize",
+    organization: { login: "DaleStudy" },
+    repository: {
+      name: "leetcode-study",
+      owner: { login: "DaleStudy" },
+    },
+    pull_request: {
+      number: 42,
+      labels: [],
+      head: { sha: "head-sha" },
+      user: { login: "testuser" },
+    },
+  };
+
+  function makeCtx() {
+    return { waitUntil: vi.fn() };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ files: [] }),
+    });
+  });
+
+  it("dispatches 2 self-fetches via ctx.waitUntil when OPENAI_API_KEY, INTERNAL_SECRET, and WORKER_URL are all set", async () => {
+    const ctx = makeCtx();
+    const env = {
+      OPENAI_API_KEY: "fake-openai",
+      INTERNAL_SECRET: "fake-secret",
+      WORKER_URL: "https://worker.test",
+    };
+
+    const response = await handleWebhook(
+      makeRequest("pull_request", basePRPayload),
+      env,
+      ctx
+    );
+
+    expect(response.status).toBe(200);
+    expect(ctx.waitUntil).toHaveBeenCalledTimes(2);
+
+    const fetchedUrls = globalThis.fetch.mock.calls.map(([url]) => url);
+    expect(fetchedUrls).toContain("https://worker.test/internal/tag-patterns");
+    expect(fetchedUrls).toContain("https://worker.test/internal/learning-status");
+
+    const dispatchCall = globalThis.fetch.mock.calls.find(([url]) =>
+      url.endsWith("/internal/tag-patterns")
+    );
+    expect(dispatchCall[1].headers["X-Internal-Secret"]).toBe("fake-secret");
+
+    expect(tagPatterns).not.toHaveBeenCalled();
+    expect(postLearningStatus).not.toHaveBeenCalled();
+  });
+
+  it("falls back to in-process handler calls when INTERNAL_SECRET is not set", async () => {
+    const ctx = makeCtx();
+    const env = {
+      OPENAI_API_KEY: "fake-openai",
+      WORKER_URL: "https://worker.test",
+    };
+
+    const response = await handleWebhook(
+      makeRequest("pull_request", basePRPayload),
+      env,
+      ctx
+    );
+
+    expect(response.status).toBe(200);
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+    expect(tagPatterns).toHaveBeenCalledTimes(1);
+    expect(postLearningStatus).toHaveBeenCalledTimes(1);
+
+    const [repoOwner, repoName, prNumber] = tagPatterns.mock.calls[0];
+    expect(repoOwner).toBe("DaleStudy");
+    expect(repoName).toBe("leetcode-study");
+    expect(prNumber).toBe(42);
+  });
+
+  it("falls back to in-process handler calls when WORKER_URL is not set", async () => {
+    const ctx = makeCtx();
+    const env = {
+      OPENAI_API_KEY: "fake-openai",
+      INTERNAL_SECRET: "fake-secret",
+    };
+
+    const response = await handleWebhook(
+      makeRequest("pull_request", basePRPayload),
+      env,
+      ctx
+    );
+
+    expect(response.status).toBe(200);
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+    expect(tagPatterns).toHaveBeenCalledTimes(1);
+    expect(postLearningStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not dispatch or call handlers when OPENAI_API_KEY is missing", async () => {
+    const ctx = makeCtx();
+    const env = {
+      INTERNAL_SECRET: "fake-secret",
+      WORKER_URL: "https://worker.test",
+    };
+
+    const response = await handleWebhook(
+      makeRequest("pull_request", basePRPayload),
+      env,
+      ctx
+    );
+
+    expect(response.status).toBe(200);
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+    expect(tagPatterns).not.toHaveBeenCalled();
+    expect(postLearningStatus).not.toHaveBeenCalled();
   });
 });

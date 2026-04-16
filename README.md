@@ -168,13 +168,40 @@ https://github.dalestudy.com
 # 개발 서버 시작
 wrangler dev
 
-# 로컬 테스트 (별도 터미널)
+# 로컬 엔드포인트 호출 (별도 터미널)
 curl -X POST http://localhost:8787/check-weeks \
   -H "Content-Type: application/json" \
   -d '{"repo_owner": "DaleStudy", "repo_name": "leetcode-study"}'
 ```
 
-### 프로덕션 테스트
+### 테스트 코드 실행
+
+이 프로젝트는 **[Bun](https://bun.sh)의 내장 테스트 러너**를 사용합니다. `package.json`이나 `node_modules`가 없는 이유는 Bun이 런타임·테스트 러너·모킹 API(`vi.mock`, `vi.fn`)를 모두 내장하고 있어서 별도 설치 없이 바로 실행되기 때문입니다.
+
+```bash
+# Bun 설치 (최초 1회) — https://bun.sh/docs/installation
+curl -fsSL https://bun.sh/install | bash
+
+# 전체 테스트 실행 (두 디렉토리를 별도 프로세스로)
+bun test handlers/ && bun test tests/
+
+# 특정 파일만 실행
+bun test handlers/webhooks.test.js
+
+# 감시 모드 (파일 변경 시 자동 재실행)
+bun test handlers/ --watch
+```
+
+테스트는 두 디렉토리로 나뉘어 있습니다:
+
+- `handlers/*.test.js`: 대상 파일 옆에 두는 단위 테스트
+- `tests/*.test.js`: Bun `vi.mock()`의 전역 레지스트리 누출을 피하기 위해 별도 프로세스로 실행하는 테스트 (예: `subrequest-budget.test.js`)
+
+자세한 작성 규칙과 예제는 `AGENTS.md`의 "테스트" 섹션을 참고하세요.
+
+모든 Pull Request와 `main` 브랜치 푸시에서 `.github/workflows/integration.yaml`이 두 디렉토리의 테스트를 자동 실행합니다.
+
+### 프로덕션 엔드포인트 호출
 
 ```bash
 curl -X POST https://github.dalestudy.com/check-weeks \

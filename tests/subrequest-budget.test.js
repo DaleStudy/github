@@ -1,0 +1,190 @@
+import { describe, it, expect, vi, beforeEach } from "bun:test";
+
+import { tagPatterns } from "../handlers/tag-patterns.js";
+import { postLearningStatus } from "../handlers/learning-status.js";
+
+const REPO_OWNER = "DaleStudy";
+const REPO_NAME = "leetcode-study";
+const PR_NUMBER = 42;
+const HEAD_SHA = "head-sha";
+const USERNAME = "testuser";
+const APP_TOKEN = "fake-app-token";
+const OPENAI_KEY = "fake-openai-key";
+
+const SOLUTION_FILES = Array.from({ length: 5 }, (_, i) => ({
+  filename: `problem-${i + 1}/${USERNAME}.ts`,
+  status: "added",
+  raw_url: `https://raw.example.com/problem-${i + 1}/${USERNAME}.ts`,
+}));
+
+function okJson(data) {
+  return Promise.resolve({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    json: () => Promise.resolve(data),
+    text: () => Promise.resolve(JSON.stringify(data)),
+  });
+}
+
+function okText(text) {
+  return Promise.resolve({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    text: () => Promise.resolve(text),
+  });
+}
+
+describe("subrequest budget — per handler invocation (5 changed files)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("tagPatterns makes ≤ 50 subrequests (expected 22: 1 files + 1 list comments + 5 deletes + 5×(raw+openai+post))", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
+      const urlStr = typeof url === "string" ? url : url.url;
+      const method = opts?.method ?? "GET";
+
+      if (urlStr.includes(`/pulls/${PR_NUMBER}/files`)) {
+        return okJson(SOLUTION_FILES);
+      }
+
+      if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "GET") {
+        return okJson(
+          SOLUTION_FILES.map((f, i) => ({
+            id: 1000 + i,
+            user: { type: "Bot" },
+            body: "<!-- dalestudy-pattern-tag -->",
+            path: f.filename,
+          }))
+        );
+      }
+
+      if (urlStr.includes("/pulls/comments/") && method === "DELETE") {
+        return okJson({});
+      }
+
+      if (urlStr.startsWith("https://raw.example.com/")) {
+        return okText("function solution() { return 0; }");
+      }
+
+      if (urlStr.includes("openai.com/v1/chat/completions")) {
+        return okJson({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  patterns: ["Two Pointers"],
+                  description: "test",
+                }),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 100, completion_tokens: 50 },
+        });
+      }
+
+      if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "POST") {
+        return okJson({ id: 999 });
+      }
+
+      throw new Error(`Unexpected fetch in tagPatterns mock: ${method} ${urlStr}`);
+    });
+
+    const prData = { draft: false, labels: [] };
+    const result = await tagPatterns(
+      REPO_OWNER,
+      REPO_NAME,
+      PR_NUMBER,
+      HEAD_SHA,
+      prData,
+      APP_TOKEN,
+      OPENAI_KEY
+    );
+
+    const fetchCount = globalThis.fetch.mock.calls.length;
+
+    expect(result.tagged).toBe(5);
+    expect(fetchCount).toBe(22);
+    expect(fetchCount).toBeLessThan(50);
+  });
+
+  it("postLearningStatus makes ≤ 50 subrequests (expected 15: 1 categories + 1 tree + 1 PR files + 5×(raw+openai) + 1 list issue comments + 1 post)", async () => {
+    const categories = Object.fromEntries(
+      SOLUTION_FILES.map((_, i) => [
+        `problem-${i + 1}`,
+        {
+          difficulty: "Easy",
+          categories: ["Array"],
+          intended_approach: "Two Pointers",
+        },
+      ])
+    );
+
+    globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
+      const urlStr = typeof url === "string" ? url : url.url;
+      const method = opts?.method ?? "GET";
+
+      if (urlStr.includes("/contents/problem-categories.json")) {
+        return okJson(categories);
+      }
+
+      if (urlStr.includes("/git/trees/main")) {
+        return okJson({
+          truncated: false,
+          tree: SOLUTION_FILES.map((f) => ({ type: "blob", path: f.filename })),
+        });
+      }
+
+      if (urlStr.includes(`/pulls/${PR_NUMBER}/files`)) {
+        return okJson(SOLUTION_FILES);
+      }
+
+      if (urlStr.startsWith("https://raw.example.com/")) {
+        return okText("function solution() { return 0; }");
+      }
+
+      if (urlStr.includes("openai.com/v1/chat/completions")) {
+        return okJson({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  matches: true,
+                  explanation: "의도된 접근법과 일치",
+                }),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 100, completion_tokens: 50 },
+        });
+      }
+
+      if (urlStr.includes(`/issues/${PR_NUMBER}/comments`) && method === "GET") {
+        return okJson([]);
+      }
+
+      if (urlStr.includes(`/issues/${PR_NUMBER}/comments`) && method === "POST") {
+        return okJson({ id: 500 });
+      }
+
+      throw new Error(`Unexpected fetch in postLearningStatus mock: ${method} ${urlStr}`);
+    });
+
+    const result = await postLearningStatus(
+      REPO_OWNER,
+      REPO_NAME,
+      PR_NUMBER,
+      USERNAME,
+      APP_TOKEN,
+      OPENAI_KEY
+    );
+
+    const fetchCount = globalThis.fetch.mock.calls.length;
+
+    expect(result.analyzed).toBe(5);
+    expect(fetchCount).toBe(15);
+    expect(fetchCount).toBeLessThan(50);
+  });
+});

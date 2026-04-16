@@ -285,8 +285,8 @@ async function handlePullRequestEvent(payload, env, ctx) {
   }
 
   // AI 핸들러들을 별도 Worker 호출로 디스패치 (각각 독립적인 subrequest 예산)
-  if (env.OPENAI_API_KEY && env.INTERNAL_SECRET) {
-    const baseUrl = env.WORKER_URL || "https://github.daleseo.workers.dev";
+  if (env.OPENAI_API_KEY && env.INTERNAL_SECRET && env.WORKER_URL) {
+    const baseUrl = env.WORKER_URL;
 
     const dispatchHeaders = {
       "Content-Type": "application/json",
@@ -326,8 +326,8 @@ async function handlePullRequestEvent(payload, env, ctx) {
 
     console.log(`[handlePullRequestEvent] Dispatched 2 AI handlers for PR #${prNumber}`);
   } else if (env.OPENAI_API_KEY) {
-    // INTERNAL_SECRET 미설정 시 기존 방식으로 폴백 (동일 invocation에서 순차 실행)
-    console.warn("[handlePullRequestEvent] INTERNAL_SECRET not set, running handlers in-process");
+    // INTERNAL_SECRET/WORKER_URL 미설정 시 기존 방식으로 폴백 (동일 invocation에서 순차 실행)
+    console.warn("[handlePullRequestEvent] INTERNAL_SECRET or WORKER_URL not set, running handlers in-process");
 
     try {
       // synchronize일 때만 변경 파일 목록 추출 (최적화: #7)
