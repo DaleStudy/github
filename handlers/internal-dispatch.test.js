@@ -12,9 +12,14 @@ vi.mock("./learning-status.js", () => ({
   postLearningStatus: vi.fn().mockResolvedValue({ posted: true }),
 }));
 
+vi.mock("./complexity-analysis.js", () => ({
+  analyzeComplexity: vi.fn().mockResolvedValue({ analyzed: 1, total: 1 }),
+}));
+
 import { handleInternalDispatch } from "./internal-dispatch.js";
 import { tagPatterns } from "./tag-patterns.js";
 import { postLearningStatus } from "./learning-status.js";
+import { analyzeComplexity } from "./complexity-analysis.js";
 import { generateGitHubAppToken } from "../utils/github.js";
 
 const VALID_SECRET = "test-secret-123";
@@ -159,6 +164,39 @@ describe("handleInternalDispatch — 라우팅", () => {
     expect(tagPatterns).not.toHaveBeenCalled();
   });
 
+  it("/internal/complexity-analysis 요청을 analyzeComplexity 로 payload 필드와 함께 라우팅한다", async () => {
+    const prData = { number: 42, draft: false, labels: [] };
+    const request = makeRequest("/internal/complexity-analysis", {
+      secret: VALID_SECRET,
+      body: {
+        repoOwner: "DaleStudy",
+        repoName: "leetcode-study",
+        prNumber: 42,
+        prData,
+      },
+    });
+
+    const response = await handleInternalDispatch(
+      request,
+      env,
+      "/internal/complexity-analysis"
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.handler).toBe("complexity-analysis");
+    expect(analyzeComplexity).toHaveBeenCalledWith(
+      "DaleStudy",
+      "leetcode-study",
+      42,
+      prData,
+      "fake-token",
+      "fake-openai"
+    );
+    expect(tagPatterns).not.toHaveBeenCalled();
+    expect(postLearningStatus).not.toHaveBeenCalled();
+  });
+
   it("알 수 없는 /internal/* 경로는 404 를 반환한다", async () => {
     const request = makeRequest("/internal/unknown", {
       secret: VALID_SECRET,
@@ -184,7 +222,7 @@ describe("handleInternalDispatch — 에러 처리", () => {
     vi.clearAllMocks();
   });
 
-  it("핸들러가 throw 하면 500 을 반환한다", async () => {
+  it("tagPatterns 핸들러가 throw 하면 500 을 반환한다", async () => {
     tagPatterns.mockRejectedValueOnce(new Error("boom"));
 
     const request = makeRequest("/internal/tag-patterns", {
@@ -207,5 +245,29 @@ describe("handleInternalDispatch — 에러 처리", () => {
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body.error).toContain("boom");
+  });
+
+  it("analyzeComplexity 핸들러가 throw 하면 500 을 반환한다", async () => {
+    analyzeComplexity.mockRejectedValueOnce(new Error("complexity-error"));
+
+    const request = makeRequest("/internal/complexity-analysis", {
+      secret: VALID_SECRET,
+      body: {
+        repoOwner: "DaleStudy",
+        repoName: "leetcode-study",
+        prNumber: 1,
+        prData: {},
+      },
+    });
+
+    const response = await handleInternalDispatch(
+      request,
+      env,
+      "/internal/complexity-analysis"
+    );
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toContain("complexity-error");
   });
 });

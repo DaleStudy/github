@@ -325,7 +325,21 @@ async function handlePullRequestEvent(payload, env, ctx) {
       )
     );
 
-    console.log(`[handlePullRequestEvent] Dispatched 2 AI handlers for PR #${prNumber}`);
+    // 복잡도 분석 디스패치
+    ctx.waitUntil(
+      fetch(`${baseUrl}/internal/complexity-analysis`, {
+        method: "POST",
+        headers: dispatchHeaders,
+        body: JSON.stringify({
+          ...commonPayload,
+          prData: pr,
+        }),
+      }).catch((err) =>
+        console.error(`[dispatch] complexityAnalysis failed: ${err.message}`)
+      )
+    );
+
+    console.log(`[handlePullRequestEvent] Dispatched 3 AI handlers for PR #${prNumber}`);
   } else if (env.OPENAI_API_KEY) {
     // INTERNAL_SECRET/WORKER_URL 미설정 시 기존 방식으로 폴백 (동일 invocation에서 순차 실행)
     console.warn("[handlePullRequestEvent] INTERNAL_SECRET or WORKER_URL not set, running handlers in-process");
@@ -365,10 +379,7 @@ async function handlePullRequestEvent(payload, env, ctx) {
     } catch (error) {
       console.error(`[handlePullRequestEvent] learningStatus failed: ${error.message}`);
     }
-  }
 
-  // 시간/공간 복잡도 분석 (OPENAI_API_KEY 있을 때만)
-  if (env.OPENAI_API_KEY) {
     try {
       await analyzeComplexity(
         repoOwner,
@@ -380,7 +391,6 @@ async function handlePullRequestEvent(payload, env, ctx) {
       );
     } catch (error) {
       console.error(`[handlePullRequestEvent] complexity analysis failed: ${error.message}`);
-      // 복잡도 분석 실패는 전체 흐름을 중단시키지 않음
     }
   }
 

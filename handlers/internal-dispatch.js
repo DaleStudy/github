@@ -10,6 +10,7 @@ import { generateGitHubAppToken } from "../utils/github.js";
 import { errorResponse, corsResponse } from "../utils/cors.js";
 import { tagPatterns } from "./tag-patterns.js";
 import { postLearningStatus } from "./learning-status.js";
+import { analyzeComplexity } from "./complexity-analysis.js";
 
 const INTERNAL_HEADER = "X-Internal-Secret";
 
@@ -48,6 +49,9 @@ export async function handleInternalDispatch(request, env, pathname) {
       case "/internal/learning-status":
         return await handleLearningStatus(payload, appToken, env);
 
+      case "/internal/complexity-analysis":
+        return await handleComplexityAnalysis(payload, appToken, env);
+
       default:
         return errorResponse("Not found", 404);
     }
@@ -82,4 +86,17 @@ async function handleLearningStatus(payload, appToken, env) {
     env.OPENAI_API_KEY
   );
   return corsResponse({ handler: "learning-status", result });
+}
+
+async function handleComplexityAnalysis(payload, appToken, env) {
+  const { repoOwner, repoName, prNumber, prData } = payload;
+  const result = await analyzeComplexity(
+    repoOwner,
+    repoName,
+    prNumber,
+    prData,
+    appToken,
+    env.OPENAI_API_KEY
+  );
+  return corsResponse({ handler: "complexity-analysis", result });
 }
