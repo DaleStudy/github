@@ -24,7 +24,7 @@ function makeRequest(body) {
 
 const env = {};
 
-describe("check-weeks repo filtering", () => {
+describe("check-weeks 저장소 필터링", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     globalThis.fetch = vi.fn().mockResolvedValue({
@@ -33,7 +33,7 @@ describe("check-weeks repo filtering", () => {
     });
   });
 
-  it("returns 403 for non-DaleStudy organization", async () => {
+  it("DaleStudy 가 아닌 organization 은 403 을 반환한다", async () => {
     const request = makeRequest({
       repo_owner: "OtherOrg",
       repo_name: "leetcode-study",
@@ -46,7 +46,7 @@ describe("check-weeks repo filtering", () => {
     expect(body.error).toContain("Unauthorized organization");
   });
 
-  it("returns 403 for non-leetcode-study repo_name", async () => {
+  it("leetcode-study 가 아닌 repo_name 은 403 을 반환한다", async () => {
     const request = makeRequest({
       repo_owner: "DaleStudy",
       repo_name: "daleui",
@@ -61,7 +61,7 @@ describe("check-weeks repo filtering", () => {
     expect(generateGitHubAppToken).not.toHaveBeenCalled();
   });
 
-  it("processes leetcode-study repo_name successfully", async () => {
+  it("leetcode-study repo_name 은 정상 처리한다", async () => {
     const request = makeRequest({
       repo_owner: "DaleStudy",
       repo_name: "leetcode-study",
@@ -74,7 +74,7 @@ describe("check-weeks repo filtering", () => {
     expect(body.success).toBe(true);
   });
 
-  it("returns 400 when repo_name is missing", async () => {
+  it("repo_name 이 없으면 400 을 반환한다", async () => {
     const request = makeRequest({
       repo_owner: "DaleStudy",
     });
@@ -86,7 +86,7 @@ describe("check-weeks repo filtering", () => {
     expect(body.error).toContain("repo_name");
   });
 
-  it("defaults repo_owner to DaleStudy when omitted", async () => {
+  it("repo_owner 생략 시 DaleStudy 로 기본 설정된다", async () => {
     const request = makeRequest({
       repo_name: "leetcode-study",
     });

@@ -244,6 +244,27 @@ GitHub Organization webhook 수신용 엔드포인트
 4. Week 없음 → 경고 댓글 작성 (중복 방지: Bot이 작성한 경고 댓글이 이미 있으면 스킵)
 5. Week 있음 → 기존 경고 댓글 삭제 (Bot이 작성한 Week 경고 댓글만)
 
+### 4. AI 핸들러 Worker 분리 아키텍처
+
+PR 이벤트를 받으면 webhook 핸들러가 두 AI 핸들러(`tagPatterns`, `postLearningStatus`)를 **별도 Worker invocation**으로 분리 디스패치한다. 각 invocation은 독립적인 Cloudflare subrequest 예산(50)을 가지므로 파일이 많은 PR에서도 예산 초과를 방지한다.
+
+```
+GitHub webhook
+   │
+   ▼
+[Invocation #1] webhook 핸들러           ← 50 subrequest 예산
+   │  ctx.waitUntil(fetch("/internal/tag-patterns"))      ─┐  self-fetch는
+   │  ctx.waitUntil(fetch("/internal/learning-status"))   ─┤  외부 요청이라
+   │                                                       │  새 invocation 트리거
+   ├──────────────▶ [Invocation #2] tagPatterns          ◀─┘  ← 독립 50 예산
+   │
+   └──────────────▶ [Invocation #3] postLearningStatus      ← 독립 50 예산
+```
+
+- `INTERNAL_SECRET`과 `WORKER_URL`이 모두 설정되어야 활성화된다. 둘 중 하나라도 없으면 기존처럼 같은 invocation에서 순차 실행(subrequest 예산 공유)되어 파일이 많은 PR에서 예산을 초과할 수 있다.
+- 내부 엔드포인트는 `/internal/tag-patterns`, `/internal/learning-status`이며 `X-Internal-Secret` 헤더로 인증한다.
+- 참고: `tests/subrequest-budget.test.js`가 5개 파일 변경 시나리오에서 각 핸들러의 fetch 호출 수(각각 22, 15회)를 회귀 테스트로 박아둔다.
+
 ## 보안 및 권한
 
 ### DaleStudy Organization 전용
@@ -328,7 +349,15 @@ wrangler secret put OPENAI_API_KEY
 
 # Webhook Secret (선택사항)
 wrangler secret put WEBHOOK_SECRET
+
+# Internal Dispatch Secret (AI 핸들러 Worker 분리용, 권장)
+# 설정하면 tagPatterns, learningStatus가 별도 Worker 호출로
+# 디스패치되어 각각 독립적인 subrequest 예산을 가짐.
+# WORKER_URL과 함께 설정되어야 활성화된다.
+wrangler secret put INTERNAL_SECRET
 ```
+
+`WORKER_URL`은 `wrangler.jsonc`의 `vars`에 정의되어 있어 기본 배포에는 추가 설정이 필요 없다. 스테이징/다른 계정 등으로 배포할 때만 덮어쓰면 된다.
 
 ### 5. GitHub App 설치
 
@@ -359,6 +388,69 @@ curl -X POST https://github.dalestudy.com/check-weeks \
 - ❌ npm 패키지 대부분 호환 안 됨 (@octokit/app 등)
 - ✅ 순수 JavaScript + Web APIs로 구현
 
+## 테스트
+
+이 프로젝트는 [Bun](https://bun.sh)의 내장 테스트 러너를 사용합니다. 별도의 `package.json`이나 의존성 설치 없이 테스트를 작성하고 실행할 수 있습니다.
+
+### 테스트 실행
+
+테스트는 `handlers/`(핸들러별 단위 테스트)와 `tests/`(프로세스 격리가 필요한 테스트)로 나뉘어 있다. Bun의 `vi.mock()`은 프로세스 전역 레지스트리에 등록되어 같은 실행 내에서 다른 파일로 누출되므로, 같은 모듈을 모킹하는 테스트와 실제 구현을 호출하는 테스트는 **별도 `bun test` 프로세스로 실행**해야 한다.
+
+```bash
+# 전체 테스트 실행 (두 디렉토리를 별도 프로세스로)
+bun test handlers/ && bun test tests/
+
+# 특정 파일만 실행
+bun test handlers/webhooks.test.js
+
+# 감시 모드 (파일 변경 시 자동 재실행)
+bun test handlers/ --watch
+```
+
+Bun 설치: https://bun.sh/docs/installation
+
+### 테스트 파일 작성 규칙
+
+- 테스트 파일은 대상 파일과 같은 디렉토리에 `*.test.js` 이름으로 배치합니다.
+  - 예: `handlers/webhooks.js` → `handlers/webhooks.test.js`
+- `bun:test`에서 제공하는 API(`describe`, `it`, `expect`, `vi`)를 사용합니다.
+- 외부 의존성(`utils/github.js` 등)은 `vi.mock()`으로 대체하고, `fetch`는 `globalThis.fetch = vi.fn()...`로 스텁합니다.
+
+```javascript
+import { describe, it, expect, vi, beforeEach } from "bun:test";
+
+vi.mock("../utils/github.js", () => ({
+  generateGitHubAppToken: vi.fn().mockResolvedValue("fake-token"),
+}));
+
+import { checkWeeks } from "./check-weeks.js";
+
+describe("checkWeeks", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([]),
+    });
+  });
+
+  it("returns 403 for non-DaleStudy organization", async () => {
+    const request = new Request("https://example.com/check-weeks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repo_owner: "OtherOrg", repo_name: "leetcode-study" }),
+    });
+
+    const response = await checkWeeks(request, {});
+    expect(response.status).toBe(403);
+  });
+});
+```
+
+### CI 자동 실행
+
+`.github/workflows/integration.yaml`이 모든 Pull Request와 `main` 브랜치 푸시에서 `bun test handlers/`와 `bun test tests/`를 각각 별도 스텝으로 자동 실행합니다. 테스트가 실패하면 PR 체크가 실패하므로, 머지 전에 반드시 통과시켜야 합니다.
+
 ## 새 기능 추가 가이드
 
 새로운 자동화 기능을 추가할 때 다음 단계를 따르세요:
@@ -366,8 +458,9 @@ curl -X POST https://github.dalestudy.com/check-weeks \
 1. **엔드포인트 추가**: `index.js`의 `fetch()` 함수에 새로운 pathname 라우팅 추가
 2. **핸들러 함수 작성**: 비즈니스 로직을 별도 함수로 분리 (예: `handleCheckAllPrs`)
 3. **GitHub App 권한 확인**: 필요한 권한이 있는지 확인하고 없으면 추가
-4. **문서 업데이트**: AGENTS.md, README.md에 새 기능 문서화
-5. **테스트**: 로컬(`wrangler dev`)에서 먼저 테스트 후 배포
+4. **테스트 작성**: 핸들러 옆에 `*.test.js`를 추가하고 `bun test`로 통과 확인 (위 "테스트" 섹션 참고)
+5. **문서 업데이트**: AGENTS.md, README.md에 새 기능 문서화
+6. **로컬 실행 테스트**: `wrangler dev`로 실제 엔드포인트 동작 확인 후 배포
 
 ## 코드 수정 시 주의사항
 

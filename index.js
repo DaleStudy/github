@@ -6,13 +6,14 @@
 
 import { checkWeeks } from "./handlers/check-weeks.js";
 import { handleWebhook } from "./handlers/webhooks.js";
+import { handleInternalDispatch } from "./handlers/internal-dispatch.js";
 import { approvePrs } from "./handlers/approve_prs.js";
 import { mergePrs } from "./handlers/merge_prs.js";
 import { preflightResponse, corsResponse, errorResponse } from "./utils/cors.js";
 import { verifyWebhookSignature } from "./utils/webhook.js";
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return preflightResponse();
@@ -23,6 +24,11 @@ export default {
     }
 
     const url = new URL(request.url);
+
+    // 내부 디스패치 엔드포인트 (self-fetch로 호출, 별도 Worker 호출로 subrequest 분리)
+    if (url.pathname.startsWith("/internal/")) {
+      return handleInternalDispatch(request, env, url.pathname);
+    }
 
     // GitHub Webhook 수신
     if (url.pathname === "/webhooks") {
@@ -51,7 +57,7 @@ export default {
         body: rawBody,
       });
 
-      return handleWebhook(newRequest, env);
+      return handleWebhook(newRequest, env, ctx);
     }
 
     // PR Week 설정 검사 (수동 호출용)

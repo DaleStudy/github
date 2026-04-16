@@ -3,6 +3,9 @@
   "main": "index.js",
   "compatibility_date": "2024-01-01",
   "account_id": "94480614a6df7731f1e4491bdac5c440",
+  "vars": {
+    "WORKER_URL": "https://github.daleseo.workers.dev",
+  },
   "observability": {
     "logs": {
       "enabled": true,

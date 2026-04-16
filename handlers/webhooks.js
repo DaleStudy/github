@@ -27,7 +27,7 @@ import { postLearningStatus } from "./learning-status.js";
 /**
  * GitHub webhook 이벤트 처리
  */
-export async function handleWebhook(request, env) {
+export async function handleWebhook(request, env, ctx) {
   try {
     const payload = await request.json();
     const eventType = request.headers.get("X-GitHub-Event");
@@ -54,7 +54,7 @@ export async function handleWebhook(request, env) {
         return handleProjectsV2ItemEvent(payload, env);
 
       case "pull_request":
-        return handlePullRequestEvent(payload, env);
+        return handlePullRequestEvent(payload, env, ctx);
 
       case "issue_comment":
         return handleIssueCommentEvent(payload, env);
@@ -240,7 +240,7 @@ async function getChangedFilenames(repoOwner, repoName, baseSha, headSha, appTok
  * - opened/reopened: Week 설정 체크 + 알고리즘 패턴 태깅 (전체 파일)
  * - synchronize: 알고리즘 패턴 태깅만 (변경된 파일만, Week 체크 스킵)
  */
-async function handlePullRequestEvent(payload, env) {
+async function handlePullRequestEvent(payload, env, ctx) {
   const action = payload.action;
 
   // opened, reopened, synchronize 액션만 처리
@@ -284,8 +284,51 @@ async function handlePullRequestEvent(payload, env) {
     console.log(`PR synchronized: #${prNumber}`);
   }
 
-  // 알고리즘 패턴 태깅 (OPENAI_API_KEY 있을 때만)
-  if (env.OPENAI_API_KEY) {
+  // AI 핸들러들을 별도 Worker 호출로 디스패치 (각각 독립적인 subrequest 예산)
+  if (env.OPENAI_API_KEY && env.INTERNAL_SECRET && env.WORKER_URL) {
+    const baseUrl = env.WORKER_URL;
+
+    const dispatchHeaders = {
+      "Content-Type": "application/json",
+      "X-Internal-Secret": env.INTERNAL_SECRET,
+    };
+
+    const commonPayload = { repoOwner, repoName, prNumber };
+
+    // 패턴 태깅 디스패치
+    ctx.waitUntil(
+      fetch(`${baseUrl}/internal/tag-patterns`, {
+        method: "POST",
+        headers: dispatchHeaders,
+        body: JSON.stringify({
+          ...commonPayload,
+          headSha: pr.head.sha,
+          prData: pr,
+        }),
+      }).catch((err) =>
+        console.error(`[dispatch] tagPatterns failed: ${err.message}`)
+      )
+    );
+
+    // 학습 현황 디스패치
+    ctx.waitUntil(
+      fetch(`${baseUrl}/internal/learning-status`, {
+        method: "POST",
+        headers: dispatchHeaders,
+        body: JSON.stringify({
+          ...commonPayload,
+          username: pr.user.login,
+        }),
+      }).catch((err) =>
+        console.error(`[dispatch] learningStatus failed: ${err.message}`)
+      )
+    );
+
+    console.log(`[handlePullRequestEvent] Dispatched 2 AI handlers for PR #${prNumber}`);
+  } else if (env.OPENAI_API_KEY) {
+    // INTERNAL_SECRET/WORKER_URL 미설정 시 기존 방식으로 폴백 (동일 invocation에서 순차 실행)
+    console.warn("[handlePullRequestEvent] INTERNAL_SECRET or WORKER_URL not set, running handlers in-process");
+
     try {
       // synchronize일 때만 변경 파일 목록 추출 (최적화: #7)
       let changedFilenames = null;
@@ -314,24 +357,12 @@ async function handlePullRequestEvent(payload, env) {
       );
     } catch (error) {
       console.error(`[handlePullRequestEvent] tagPatterns failed: ${error.message}`);
-      // 패턴 태깅 실패는 전체 흐름을 중단시키지 않음
     }
-  }
 
-  // 학습 현황 댓글 (OPENAI_API_KEY 있을 때만)
-  if (env.OPENAI_API_KEY) {
     try {
-      await postLearningStatus(
-        repoOwner,
-        repoName,
-        prNumber,
-        pr.user.login,
-        appToken,
-        env.OPENAI_API_KEY
-      );
+      await postLearningStatus(repoOwner, repoName, prNumber, pr.user.login, appToken, env.OPENAI_API_KEY);
     } catch (error) {
       console.error(`[handlePullRequestEvent] learningStatus failed: ${error.message}`);
-      // 학습 현황 실패는 전체 흐름을 중단시키지 않음
     }
   }
 
