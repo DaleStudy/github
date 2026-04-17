@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "bun:test";
 
 import { tagPatterns } from "../handlers/tag-patterns.js";
 import { postLearningStatus } from "../handlers/learning-status.js";
+import { analyzeComplexity } from "../handlers/complexity-analysis.js";
 
 const REPO_OWNER = "DaleStudy";
 const REPO_NAME = "leetcode-study";
@@ -185,6 +186,78 @@ describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", (
 
     expect(result.analyzed).toBe(5);
     expect(fetchCount).toBe(15);
+    expect(fetchCount).toBeLessThan(50);
+  });
+
+  it("analyzeComplexity 는 50 회 이하 subrequest 를 호출한다 (예상 9: PR files 1 + 5×raw + OpenAI 1 + 이슈 코멘트 목록 1 + POST 1)", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
+      const urlStr = typeof url === "string" ? url : url.url;
+      const method = opts?.method ?? "GET";
+
+      if (urlStr.includes(`/pulls/${PR_NUMBER}/files`)) {
+        return okJson(SOLUTION_FILES);
+      }
+
+      if (urlStr.startsWith("https://raw.example.com/")) {
+        return okText("// TC: O(n)\n// SC: O(1)\nfunction solution() { return 0; }");
+      }
+
+      if (urlStr.includes("openai.com/v1/chat/completions")) {
+        return okJson({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  files: SOLUTION_FILES.map((f, i) => ({
+                    problemName: `problem-${i + 1}`,
+                    solutions: [
+                      {
+                        name: "solution",
+                        description: "기본 풀이",
+                        hasUserAnnotation: true,
+                        userTime: "O(n)",
+                        userSpace: "O(1)",
+                        actualTime: "O(n)",
+                        actualSpace: "O(1)",
+                        matches: { time: true, space: true },
+                        feedback: "정확합니다!",
+                        suggestion: "현재 구현이 적절해 보입니다.",
+                      },
+                    ],
+                  })),
+                }),
+              },
+            },
+          ],
+        });
+      }
+
+      if (urlStr.includes(`/issues/${PR_NUMBER}/comments`) && method === "GET") {
+        return okJson([]);
+      }
+
+      if (urlStr.includes(`/issues/${PR_NUMBER}/comments`) && method === "POST") {
+        return okJson({ id: 600 });
+      }
+
+      throw new Error(`Unexpected fetch in analyzeComplexity mock: ${method} ${urlStr}`);
+    });
+
+    const prData = { draft: false, labels: [] };
+    const result = await analyzeComplexity(
+      REPO_OWNER,
+      REPO_NAME,
+      PR_NUMBER,
+      prData,
+      APP_TOKEN,
+      OPENAI_KEY
+    );
+
+    const fetchCount = globalThis.fetch.mock.calls.length;
+
+    expect(result.analyzed).toBe(5);
+    expect(result.total).toBe(5);
+    expect(fetchCount).toBe(9);
     expect(fetchCount).toBeLessThan(50);
   });
 });
