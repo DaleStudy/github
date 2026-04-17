@@ -327,16 +327,24 @@ async function handlePullRequestEvent(payload, env, ctx) {
 
     // 복잡도 분석 디스패치
     ctx.waitUntil(
-      fetch(`${baseUrl}/internal/complexity-analysis`, {
-        method: "POST",
-        headers: dispatchHeaders,
-        body: JSON.stringify({
-          ...commonPayload,
-          prData: pr,
-        }),
-      }).catch((err) =>
-        console.error(`[dispatch] complexityAnalysis failed: ${err.message}`)
-      )
+      (async () => {
+        try {
+          const res = await fetch(`${baseUrl}/internal/complexity-analysis`, {
+            method: "POST",
+            headers: dispatchHeaders,
+            body: JSON.stringify({
+              ...commonPayload,
+              prData: pr,
+            }),
+          });
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            console.error(`[dispatch] complexityAnalysis HTTP ${res.status}: ${text}`);
+          }
+        } catch (err) {
+          console.error(`[dispatch] complexityAnalysis failed: ${err.message}`);
+        }
+      })()
     );
 
     console.log(`[handlePullRequestEvent] Dispatched 3 AI handlers for PR #${prNumber}`);
