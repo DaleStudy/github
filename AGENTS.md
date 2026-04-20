@@ -307,7 +307,7 @@ wrangler deploy
 ### 커스텀 도메인
 
 - Production: https://github.dalestudy.com
-- Worker.dev: https://github.daleseo.workers.dev
+- Worker.dev: https://github.dalestudy.workers.dev
 
 자세한 배포 가이드는 `DEPLOYMENT.md` 참고.
 
