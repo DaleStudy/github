@@ -285,7 +285,7 @@ export async function fetchUserSolutions(
 
 /**
  * Fetches the files changed in a PR and returns those that match
- * {problem-name}/{username}.{ext} and are added or modified.
+ * {problem-name}/{username}.{ext} and are added, modified, or renamed.
  *
  * @param {string} repoOwner
  * @param {string} repoName
@@ -329,7 +329,12 @@ export async function fetchPRSubmissions(
   const results = [];
 
   for (const file of files) {
-    if (file.status !== "added" && file.status !== "modified") continue;
+    if (
+      file.status !== "added" &&
+      file.status !== "modified" &&
+      file.status !== "renamed"
+    )
+      continue;
 
     const match = file.filename.match(usernamePattern);
     if (match) {
