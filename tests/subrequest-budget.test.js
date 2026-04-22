@@ -118,6 +118,7 @@ describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", (
         {
           difficulty: "Easy",
           categories: ["Array"],
+          blindCategories: ["Array"],
           intended_approach: "Two Pointers",
         },
       ])

@@ -15,18 +15,29 @@ import {
   formatLearningStatusComment,
   upsertLearningStatusComment,
 } from "../utils/learningComment.js";
-import {
-  BLIND_CATEGORY_ORDER,
-  getBlindCategories,
-} from "../utils/blindCategories.js";
 
 const MAX_FILE_SIZE = 15000; // 15K 문자 제한 (OpenAI 토큰 안전장치)
+
+// Blind Top 75 큐레이션 순서 — 동률 정렬의 타이브레이커로 사용.
+// 출처: https://www.teamblind.com/post/new-year-gift-curated-list-of-top-75-leetcode-questions-to-save-your-time-oam1oreu
+const BLIND_CATEGORY_ORDER = [
+  "Array",
+  "Binary",
+  "Dynamic Programming",
+  "Graph",
+  "Interval",
+  "Linked List",
+  "Matrix",
+  "String",
+  "Tree",
+  "Heap",
+];
 
 /**
  * Blind Top 75 카테고리별로 누적 풀이 진행도를 계산한다.
  *
- * `problem-categories.json` 의 LeetCode 세부 카테고리(20+개) 대신
- * Blind 10 카테고리만 표로 노출한다 (이슈 #34).
+ * `problem-categories.json` 의 각 문제에 포함된 `blindCategories` 필드를
+ * 기준으로 Blind 10개 카테고리만 집계한다 (이슈 #34).
  *
  * @param {object} categories - problem-categories.json 전체 오브젝트
  * @param {string[]} solvedProblems - 사용자가 풀이한 문제 이름 배열
@@ -42,8 +53,7 @@ function buildCategoryProgress(categories, solvedProblems) {
   );
 
   for (const [problemName, info] of Object.entries(categories)) {
-    const blindCategories = getBlindCategories(problemName);
-    for (const cat of blindCategories) {
+    for (const cat of info.blindCategories) {
       const entry = categoryMap.get(cat);
       if (!entry) continue;
       entry.total++;
