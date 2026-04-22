@@ -18,8 +18,26 @@ import {
 
 const MAX_FILE_SIZE = 15000; // 15K 문자 제한 (OpenAI 토큰 안전장치)
 
+// Blind Top 75 큐레이션 순서 — 동률 정렬의 타이브레이커로 사용.
+// 출처: https://www.teamblind.com/post/new-year-gift-curated-list-of-top-75-leetcode-questions-to-save-your-time-oam1oreu
+const BLIND_CATEGORY_ORDER = [
+  "Array",
+  "Binary",
+  "Dynamic Programming",
+  "Graph",
+  "Interval",
+  "Linked List",
+  "Matrix",
+  "String",
+  "Tree",
+  "Heap",
+];
+
 /**
- * 카테고리별로 누적 풀이 진행도를 계산한다.
+ * Blind Top 75 카테고리별로 누적 풀이 진행도를 계산한다.
+ *
+ * `problem-categories.json` 의 각 문제에 포함된 `blindCategories` 필드를
+ * 기준으로 Blind 10개 카테고리만 집계한다 (이슈 #34).
  *
  * @param {object} categories - problem-categories.json 전체 오브젝트
  * @param {string[]} solvedProblems - 사용자가 풀이한 문제 이름 배열
@@ -27,14 +45,17 @@ const MAX_FILE_SIZE = 15000; // 15K 문자 제한 (OpenAI 토큰 안전장치)
  */
 function buildCategoryProgress(categories, solvedProblems) {
   const solvedSet = new Set(solvedProblems);
-  const categoryMap = new Map();
+  const categoryMap = new Map(
+    BLIND_CATEGORY_ORDER.map((cat) => [
+      cat,
+      { total: 0, solved: 0, solvedDifficulties: [] },
+    ])
+  );
 
   for (const [problemName, info] of Object.entries(categories)) {
-    for (const cat of info.categories) {
-      if (!categoryMap.has(cat)) {
-        categoryMap.set(cat, { total: 0, solved: 0, solvedDifficulties: [] });
-      }
+    for (const cat of info.blindCategories) {
       const entry = categoryMap.get(cat);
+      if (!entry) continue;
       entry.total++;
       if (solvedSet.has(problemName)) {
         entry.solved++;
@@ -48,7 +69,9 @@ function buildCategoryProgress(categories, solvedProblems) {
       const ratioA = a[1].total > 0 ? a[1].solved / a[1].total : 0;
       const ratioB = b[1].total > 0 ? b[1].solved / b[1].total : 0;
       if (ratioB !== ratioA) return ratioB - ratioA;
-      return a[0].localeCompare(b[0]);
+      return (
+        BLIND_CATEGORY_ORDER.indexOf(a[0]) - BLIND_CATEGORY_ORDER.indexOf(b[0])
+      );
     })
     .map(([cat, data]) => {
       const diffCounts = {};
