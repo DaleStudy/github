@@ -764,3 +764,253 @@ describe("analyzeComplexity — 에러 처리", () => {
     ).rejects.toThrow("Failed to list comments");
   });
 });
+
+// ── 응답 정규화 ───────────────────────────────────
+
+describe("analyzeComplexity — 응답 정규화", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function setupFetchAndCaptureBody(openaiFiles) {
+    let capturedBody = null;
+
+    globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
+      const urlStr = typeof url === "string" ? url : url.url;
+      const method = opts?.method ?? "GET";
+
+      if (urlStr.includes("/pulls/") && urlStr.includes("/files")) {
+        return okJson(openaiFiles.map((f) => makeSolutionFile(f.problemName)));
+      }
+      if (urlStr.startsWith("https://raw.example.com/")) {
+        return okText("function solution() {}");
+      }
+      if (urlStr.includes("openai.com")) {
+        return makeOpenAIResponse(openaiFiles);
+      }
+      if (urlStr.includes("/issues/") && urlStr.includes("/comments")) {
+        if (method === "GET") return okJson([]);
+        if (method === "POST") {
+          capturedBody = JSON.parse(opts.body).body;
+          return okJson({ id: 1 });
+        }
+      }
+      throw new Error(`Unexpected fetch: ${method} ${urlStr}`);
+    });
+
+    return () => capturedBody;
+  }
+
+  it("모델이 hasUserAnnotation=true 로 답해도 userTime/userSpace 가 둘 다 null 이면 false 로 뒤집힌다", async () => {
+    const getBody = setupFetchAndCaptureBody([
+      {
+        problemName: "two-sum",
+        solutions: [
+          {
+            name: "solution",
+            description: "기본 풀이",
+            hasUserAnnotation: true,
+            userTime: null,
+            userSpace: null,
+            actualTime: "O(n)",
+            actualSpace: "O(1)",
+            matches: { time: true, space: true },
+            feedback: "fb",
+            suggestion: "sg",
+          },
+        ],
+      },
+    ]);
+
+    await analyzeComplexity(
+      REPO_OWNER, REPO_NAME, PR_NUMBER,
+      makePrData(),
+      APP_TOKEN, OPENAI_KEY
+    );
+
+    const body = getBody();
+    expect(body).not.toContain("유저 분석");
+    expect(body).toContain("| | 복잡도 |");
+    expect(body).toContain("💡 풀이에 시간/공간 복잡도를 주석으로 남겨보세요!");
+  });
+
+  it("userTime 값에 Big-O 리터럴이 없으면 null 로 떨어지고 matches.time 도 false 가 된다", async () => {
+    const getBody = setupFetchAndCaptureBody([
+      {
+        problemName: "two-sum",
+        solutions: [
+          {
+            name: "solution",
+            description: "기본 풀이",
+            hasUserAnnotation: true,
+            userTime: "아주 빠름",
+            userSpace: "O(1)",
+            actualTime: "O(n)",
+            actualSpace: "O(1)",
+            matches: { time: true, space: true },
+            feedback: "fb",
+            suggestion: "sg",
+          },
+        ],
+      },
+    ]);
+
+    await analyzeComplexity(
+      REPO_OWNER, REPO_NAME, PR_NUMBER,
+      makePrData(),
+      APP_TOKEN, OPENAI_KEY
+    );
+
+    const body = getBody();
+    // 비교 테이블은 유지됨 (userSpace 는 유효)
+    expect(body).toContain("유저 분석");
+    // userTime 행은 null 처리 → 유저값 "-", 매칭 기호 "-"
+    expect(body).toMatch(/\*\*Time\*\*\s*\|\s*-\s*\|\s*O\(n\)\s*\|\s*-/);
+  });
+
+  it("모델이 matches.time=true 를 반환해도 userTime=null 이면 matches.time 이 false 로 강제된다", async () => {
+    const getBody = setupFetchAndCaptureBody([
+      {
+        problemName: "two-sum",
+        solutions: [
+          {
+            name: "solution",
+            description: "기본 풀이",
+            hasUserAnnotation: true,
+            userTime: null,
+            userSpace: "O(1)",
+            actualTime: "O(n)",
+            actualSpace: "O(1)",
+            matches: { time: true, space: true },
+            feedback: "fb",
+            suggestion: "sg",
+          },
+        ],
+      },
+    ]);
+
+    await analyzeComplexity(
+      REPO_OWNER, REPO_NAME, PR_NUMBER,
+      makePrData(),
+      APP_TOKEN, OPENAI_KEY
+    );
+
+    const body = getBody();
+    // userTime null → Time 행 매칭 기호 "-", userSpace 는 일치로 ✅
+    expect(body).toMatch(/\*\*Time\*\*\s*\|\s*-\s*\|\s*O\(n\)\s*\|\s*-/);
+    expect(body).toMatch(/\*\*Space\*\*\s*\|\s*O\(1\)\s*\|\s*O\(1\)\s*\|\s*✅/);
+  });
+
+  it("멀티 풀이에서 주석 있는 풀이와 없는 풀이가 섞여 있을 때 각자 올바르게 정규화된다", async () => {
+    const getBody = setupFetchAndCaptureBody([
+      {
+        problemName: "find-min",
+        solutions: [
+          {
+            name: "findMin_math",
+            description: "Math.min 사용",
+            hasUserAnnotation: true,
+            userTime: "O(n^4)",
+            userSpace: "O(n)",
+            actualTime: "O(n)",
+            actualSpace: "O(n)",
+            matches: { time: false, space: true },
+            feedback: "fb1",
+            suggestion: "sg1",
+          },
+          {
+            name: "findMin_naive",
+            description: "순차 탐색",
+            hasUserAnnotation: true,
+            userTime: "O(n^3)",
+            userSpace: "O(1)",
+            actualTime: "O(n)",
+            actualSpace: "O(1)",
+            matches: { time: false, space: true },
+            feedback: "fb2",
+            suggestion: "sg2",
+          },
+          {
+            // 주석 없는 풀이인데 모델이 실수로 true 를 채워서 보냄
+            name: "findMin",
+            description: "이진 탐색",
+            hasUserAnnotation: true,
+            userTime: null,
+            userSpace: null,
+            actualTime: "O(log n)",
+            actualSpace: "O(1)",
+            matches: { time: true, space: true },
+            feedback: "fb3",
+            suggestion: "sg3",
+          },
+        ],
+      },
+    ]);
+
+    await analyzeComplexity(
+      REPO_OWNER, REPO_NAME, PR_NUMBER,
+      makePrData(),
+      APP_TOKEN, OPENAI_KEY
+    );
+
+    const body = getBody();
+    // 3 풀이 모두 details 로 렌더
+    expect(body).toContain("3가지 풀이");
+    expect(body).toContain("findMin_math");
+    expect(body).toContain("findMin_naive");
+    expect(body).toContain("findMin");
+    // 주석 없는 풀이는 댓글 상에서 '복잡도' 단일 테이블로 렌더되어야 함
+    expect(body).toContain("| | 복잡도 |");
+    // 주석 없는 풀이가 하나라도 있으면 안내 블록 포함
+    expect(body).toContain("💡 풀이에 시간/공간 복잡도를 주석으로 남겨보세요!");
+  });
+});
+
+// ── user prompt 패키징 ────────────────────────────
+
+describe("analyzeComplexity — user prompt 라인 번호", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("OpenAI 에 전달되는 user prompt 각 라인에 'L{n}: ' prefix 가 붙는다", async () => {
+    const sourceLines = [
+      "// TC: O(n)",
+      "// SC: O(1)",
+      "function solution() { return 0; }",
+    ];
+    const source = sourceLines.join("\n");
+
+    let capturedUserContent = null;
+    globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
+      const urlStr = typeof url === "string" ? url : url.url;
+      const method = opts?.method ?? "GET";
+
+      if (urlStr.includes("/pulls/") && urlStr.includes("/files")) {
+        return okJson([makeSolutionFile("two-sum")]);
+      }
+      if (urlStr.startsWith("https://raw.example.com/")) {
+        return okText(source);
+      }
+      if (urlStr.includes("openai.com")) {
+        capturedUserContent = JSON.parse(opts.body).messages[1].content;
+        return makeOpenAIResponse([makeSingleSolutionAnalysis("two-sum")]);
+      }
+      if (urlStr.includes("/issues/") && urlStr.includes("/comments")) {
+        if (method === "GET") return okJson([]);
+        if (method === "POST") return okJson({ id: 1 });
+      }
+      throw new Error(`Unexpected fetch: ${method} ${urlStr}`);
+    });
+
+    await analyzeComplexity(
+      REPO_OWNER, REPO_NAME, PR_NUMBER,
+      makePrData(),
+      APP_TOKEN, OPENAI_KEY
+    );
+
+    expect(capturedUserContent).toContain("L1: // TC: O(n)");
+    expect(capturedUserContent).toContain("L2: // SC: O(1)");
+    expect(capturedUserContent).toContain("L3: function solution() { return 0; }");
+  });
+});

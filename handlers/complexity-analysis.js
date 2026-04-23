@@ -21,21 +21,78 @@ const FILE_DELIMITER = "=====";
 const SYSTEM_PROMPT = `당신은 알고리즘 풀이의 시간/공간 복잡도를 분석하는 전문가입니다.
 
 여러 문제의 솔루션 코드가 구분자(===== {문제명} =====)로 나뉘어 제공됩니다.
+각 파일은 라인 번호 prefix "L{n}: "와 함께 전달됩니다. 주석 귀속 판단에 이 라인 번호를 활용하세요.
 각 문제별로 독립적으로 분석하세요.
 
+## 풀이(solution) 경계
 하나의 문제 안에 같은 문제를 여러 가지 방식으로 푼 풀이가 포함될 수 있습니다.
-각 문제마다 코드에서 독립된 풀이가 몇 개인지 판별하세요. (함수/클래스/메서드 단위로 구분)
+풀이는 top-level 함수/메서드/클래스 선언 단위로 구분합니다. 선언이 시작된 라인을 "헤더 라인",
+본문이 끝난 라인을 "종료 라인"이라 합니다.
+- 언어별 헤더 예: JS의 \`function\`/\`const ... = (...) =>\`, Python의 \`def\`/\`class\`,
+  Rust의 \`fn\`/\`impl { pub fn ... }\`, Go의 \`func\`, Java/Kotlin의 메서드 선언 등.
+- 파일 상단부터 순서대로 풀이 1..N으로 번호를 붙입니다.
+- 중첩 함수(inner helper)는 독립 풀이로 세지 않습니다.
 
-각 풀이에 대해:
-1. name: 함수명 또는 식별 가능한 이름 (예: "twoSum_bruteForce", "Solution.maxArea")
-2. description: 접근 방식 한 줄 설명 (예: "이진 탐색", "HashMap 활용")
-3. 코드의 실제 시간/공간 복잡도를 Big-O 표기로 계산 (actualTime, actualSpace).
-4. 해당 풀이 바로 위/근처에 사용자가 남긴 시간복잡도/공간복잡도 주석을 찾으세요.
-   주석은 자유 포맷이며 언어별 주석 스타일(//, #, /* */, --, """)과 한/영 키워드가 섞일 수 있습니다.
-   예: "// TC: O(n)", "# 시간복잡도: O(n log n)", "/* Space: O(1) */", "// Time: O(n^2)"
-   - 찾았으면 hasUserAnnotation=true, userTime/userSpace에 사용자 값 그대로.
-   - 한쪽만 적혀 있으면 다른 쪽은 null.
-   - 전혀 없으면 hasUserAnnotation=false, userTime=null, userSpace=null.
+## 주석 귀속 규칙 (엄격)
+풀이 k의 시간/공간 복잡도 주석은 다음 두 영역에서만 찾습니다.
+
+1) 헤더 바로 위 영역
+   - 풀이 k의 헤더 라인 바로 윗줄부터 위로 올라가면서 **빈 줄을 만나면 즉시 중단**합니다.
+   - 풀이 k-1이 존재한다면 풀이 k-1의 종료 라인을 넘어가지 않습니다 (k=1이면 파일 시작이 하한).
+   - 즉, 풀이 k의 헤더에 "붙어 있는" 연속된 주석 블록만 대상입니다.
+
+2) 본문 첫 라인 영역
+   - 풀이 k의 헤더 다음 라인에 붙어 있는 연속된 주석 블록(예: Python docstring, 함수 첫 줄 \`// ...\`).
+
+위 두 영역 밖의 주석은 풀이 k의 주석이 **아닙니다**. 다른 풀이의 영역을 절대 침범하지 마세요.
+
+## 유효한 복잡도 주석의 정의
+주석이 유효한 복잡도 주석으로 인정되려면 다음을 **모두** 만족해야 합니다.
+1. Big-O 리터럴 포함: \`O(...)\`, \`Θ(...)\`, \`Ω(...)\`, \`o(...)\`, \`ω(...)\` 중 하나.
+2. 시간/공간 중 어느 쪽인지를 가리키는 키워드와 같은 라인 또는 같은 주석 블록 안에 있을 것:
+   시간복잡도 / 공간복잡도 / TC / SC / Time / Space / Complexity.
+3. 시간/공간 중 어느 쪽을 말하는지 판별 가능.
+
+언어별 주석 스타일(\`//\`, \`#\`, \`/* */\`, \`--\`, \`"""\`)과 한/영 혼합을 허용합니다.
+예: \`// TC: O(n)\`, \`# 시간복잡도: O(n log n)\`, \`/* Space: O(1) */\`, \`// Time: O(n^2)\`.
+
+판별 불가하거나 위 조건 중 하나라도 어긋나면 그 주석은 **무시**합니다.
+
+## 부정 예시 (아래는 모두 "주석 없음"으로 처리)
+- \`// brute force 풀이\` — 접근 방식 설명일 뿐, 복잡도 측정치 아님
+- \`# 두 포인터 사용\` — 알고리즘 언급만
+- \`// 목표: O(n)으로 만들기\` — 목표/희망이지 측정치 아님
+- \`// 공간 O(1)만 써야 함 (문제 제약)\` — 문제 제약 언급
+- 풀이와 동떨어진 파일 상단의 문제 설명 주석(풀이 귀속 영역 밖)
+
+풀이 k에 유효한 주석이 하나도 없으면:
+  hasUserAnnotation = false, userTime = null, userSpace = null, matches.time = false, matches.space = false.
+
+## 멀티 풀이 예시 (요약)
+입력:
+L1: // TC: O(n^4)
+L2: // SC: O(n)
+L3: const findMin_math = (nums) => Math.min(...nums);
+L4:
+L5: // TC: O(n^3)
+L6: // SC: O(1)
+L7: const findMin_naive = (nums) => { /* ... */ };
+L8:
+L9: const findMin = (nums) => { /* ... */ };
+
+출력(요약):
+[
+  { name: "findMin_math",  userTime: "O(n^4)", userSpace: "O(n)", hasUserAnnotation: true  },
+  { name: "findMin_naive", userTime: "O(n^3)", userSpace: "O(1)", hasUserAnnotation: true  },
+  { name: "findMin",       userTime: null,     userSpace: null,   hasUserAnnotation: false }
+]
+
+## 각 풀이에 대해 출력할 필드
+1. name: 함수명 또는 식별 가능한 이름 (예: "twoSum_bruteForce", "Solution.maxArea").
+2. description: 접근 방식 한 줄 설명 (예: "이진 탐색", "HashMap 활용").
+3. actualTime, actualSpace: 코드의 실제 시간/공간 복잡도를 Big-O 표기로 계산.
+4. hasUserAnnotation, userTime, userSpace: 위 "주석 귀속 규칙" + "유효한 복잡도 주석의 정의"에 따라 채웁니다.
+   - 한쪽만 있으면 다른 쪽은 null.
 5. matches.time / matches.space:
    - hasUserAnnotation=false면 둘 다 false.
    - 사용자 값이 있는 항목만 actual과 비교하여 일치 여부를 boolean으로 반환.
@@ -71,11 +128,51 @@ const SYSTEM_PROMPT = `당신은 알고리즘 풀이의 시간/공간 복잡도�
   ]
 }`;
 
+function addLineNumbers(content) {
+  return content
+    .split("\n")
+    .map((line, i) => `L${i + 1}: ${line}`)
+    .join("\n");
+}
+
+const BIG_O_PATTERN = /[OΘΩoω]\s*\(/;
+
+function normalizeSolution(s) {
+  const userTime =
+    typeof s.userTime === "string" && BIG_O_PATTERN.test(s.userTime)
+      ? s.userTime
+      : null;
+  const userSpace =
+    typeof s.userSpace === "string" && BIG_O_PATTERN.test(s.userSpace)
+      ? s.userSpace
+      : null;
+
+  const hasUserAnnotation = userTime !== null || userSpace !== null;
+
+  return {
+    name: typeof s.name === "string" ? s.name : "unknown",
+    description: typeof s.description === "string" ? s.description : "",
+    hasUserAnnotation,
+    userTime,
+    userSpace,
+    actualTime: typeof s.actualTime === "string" ? s.actualTime : "?",
+    actualSpace: typeof s.actualSpace === "string" ? s.actualSpace : "?",
+    matches: {
+      time:
+        hasUserAnnotation && userTime !== null && s.matches?.time === true,
+      space:
+        hasUserAnnotation && userSpace !== null && s.matches?.space === true,
+    },
+    feedback: typeof s.feedback === "string" ? s.feedback : "",
+    suggestion: typeof s.suggestion === "string" ? s.suggestion : "",
+  };
+}
+
 async function callComplexityAnalysis(fileEntries, apiKey) {
   const userPrompt = fileEntries
     .map(
       (f) =>
-        `${FILE_DELIMITER} ${f.problemName} ${FILE_DELIMITER}\n\`\`\`\n${f.content}\n\`\`\``
+        `${FILE_DELIMITER} ${f.problemName} ${FILE_DELIMITER}\n\`\`\`\n${addLineNumbers(f.content)}\n\`\`\``
     )
     .join("\n\n");
 
@@ -119,21 +216,7 @@ async function callComplexityAnalysis(fileEntries, apiKey) {
     problemName:
       typeof file.problemName === "string" ? file.problemName : "unknown",
     solutions: (Array.isArray(file.solutions) ? file.solutions : []).map(
-      (s) => ({
-        name: typeof s.name === "string" ? s.name : "unknown",
-        description: typeof s.description === "string" ? s.description : "",
-        hasUserAnnotation: s.hasUserAnnotation === true,
-        userTime: typeof s.userTime === "string" ? s.userTime : null,
-        userSpace: typeof s.userSpace === "string" ? s.userSpace : null,
-        actualTime: typeof s.actualTime === "string" ? s.actualTime : "?",
-        actualSpace: typeof s.actualSpace === "string" ? s.actualSpace : "?",
-        matches: {
-          time: s.matches?.time === true,
-          space: s.matches?.space === true,
-        },
-        feedback: typeof s.feedback === "string" ? s.feedback : "",
-        suggestion: typeof s.suggestion === "string" ? s.suggestion : "",
-      })
+      normalizeSolution
     ),
   }));
 }
