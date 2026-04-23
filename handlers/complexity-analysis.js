@@ -49,53 +49,140 @@ const SYSTEM_PROMPT = `당신은 알고리즘 풀이의 시간/공간 복잡도�
 ## 유효한 복잡도 주석의 정의
 주석이 유효한 복잡도 주석으로 인정되려면 다음을 **모두** 만족해야 합니다.
 1. Big-O 리터럴 포함: \`O(...)\`, \`Θ(...)\`, \`Ω(...)\`, \`o(...)\`, \`ω(...)\` 중 하나.
-2. 시간/공간 중 어느 쪽인지를 가리키는 키워드와 같은 라인 또는 같은 주석 블록 안에 있을 것:
-   시간복잡도 / 공간복잡도 / TC / SC / Time / Space / Complexity.
+2. 시간/공간 중 어느 쪽인지를 가리키는 키워드와 같은 라인 또는 같은 주석 블록 안에 있을 것.
+   키워드는 **대소문자 무관**:
+   - 시간 쪽: \`TC\` / \`tc\` / \`Time\` / \`time\` / \`시간복잡도\`
+   - 공간 쪽: \`SC\` / \`sc\` / \`Space\` / \`space\` / \`공간복잡도\`
+   - 공통(모호): \`Complexity\` / \`complexity\` — 시간/공간 판별 가능할 때만 유효.
 3. 시간/공간 중 어느 쪽을 말하는지 판별 가능.
 
 언어별 주석 스타일(\`//\`, \`#\`, \`/* */\`, \`--\`, \`"""\`)과 한/영 혼합을 허용합니다.
-예: \`// TC: O(n)\`, \`# 시간복잡도: O(n log n)\`, \`/* Space: O(1) */\`, \`// Time: O(n^2)\`.
+예: \`// TC: O(n)\`, \`# 시간복잡도: O(n log n)\`, \`/* Space: O(1) */\`, \`// tc: O(n^2)\`.
 
 판별 불가하거나 위 조건 중 하나라도 어긋나면 그 주석은 **무시**합니다.
+
+## 원문 복사 원칙 (절대 규칙)
+- userTime / userSpace 에는 **원본 주석에 적혀 있는 Big-O 표현을 글자 그대로** 담습니다.
+- 유저의 값이 합리적이든 비합리적이든, **절대 교정하거나 반올림하거나 요약하지 마세요.**
+  예: 유저가 \`O(n^7)\` 이라고 썼다면 userTime 은 **반드시** \`"O(n^7)"\` — actual 이 \`O(n)\` 이어도 그대로.
+- 유저 값이 actual 과 다르면 그 사실은 matches=false 와 feedback 에서 다루세요. userTime/userSpace 에서는 다루지 않습니다.
+- **경고 신호**: userTime 이 actual 과 우연히 같게 떨어질 때, "혹시 내가 actual 을 복붙한 건 아닌가?" 를 점검하세요.
+  원본 소스에서 그 값을 **문자 그대로 인용**할 수 있어야 합니다. 인용할 수 없으면 null 로 바꾸세요.
 
 ## 부정 예시 (아래는 모두 "주석 없음"으로 처리)
 - \`// brute force 풀이\` — 접근 방식 설명일 뿐, 복잡도 측정치 아님
 - \`# 두 포인터 사용\` — 알고리즘 언급만
-- \`// 목표: O(n)으로 만들기\` — 목표/희망이지 측정치 아님
+- \`// 목표: O(n)으로 만들기\` — 목표/희망이지 측정치 아님 (TC/SC 키워드도 없음)
 - \`// 공간 O(1)만 써야 함 (문제 제약)\` — 문제 제약 언급
+- JSDoc \`@param {number} n\` / \`@return {boolean}\` — 파라미터/리턴 타입 설명이지 복잡도 주석 아님
+- 함수 본문 안의 알고리즘 단계 설명 \`// 인접 리스트 생성\` — 복잡도 주석 아님
 - 풀이와 동떨어진 파일 상단의 문제 설명 주석(풀이 귀속 영역 밖)
 
 풀이 k에 유효한 주석이 하나도 없으면:
   hasUserAnnotation = false, userTime = null, userSpace = null, matches.time = false, matches.space = false.
 
-## 멀티 풀이 예시 (요약)
-입력:
-L1: // TC: O(n^4)
-L2: // SC: O(n)
-L3: const findMin_math = (nums) => Math.min(...nums);
-L4:
-L5: // TC: O(n^3)
-L6: // SC: O(1)
-L7: const findMin_naive = (nums) => { /* ... */ };
-L8:
-L9: const findMin = (nums) => { /* ... */ };
+## 인용 가능성 체크 (환각 방지)
+hasUserAnnotation = true 로 두기 전에 다음을 **모두** 확인하세요.
+  (1) 소스의 특정 라인 번호에서 (TC|SC|Time|Space|시간복잡도|공간복잡도|Complexity) 키워드를
+      **문자 그대로 인용**할 수 있는가? (대소문자 무관)
+  (2) 그 **같은 라인 또는 같은 주석 블록** 안에서 Big-O 리터럴(\`O(...)\` 등)을 **문자 그대로 인용**할 수 있는가?
+  (3) 그 라인이 해당 풀이의 "주석 귀속 규칙" 이 허용하는 영역 안에 있는가?
 
-출력(요약):
+셋 중 하나라도 확신이 서지 않으면 **무조건**:
+  hasUserAnnotation = false, userTime = null, userSpace = null, matches.time = false, matches.space = false.
+
+특히 다음 행동은 **절대 금지**입니다:
+- 주석이 없는 풀이에 대해 actualTime/actualSpace 를 userTime/userSpace 로 그대로 복제하기.
+- "이 코드라면 이런 주석이 있었을 법하다" 고 추정해서 userTime/userSpace 를 채우기.
+- JSDoc \`@param\`, \`@return\` 같은 파라미터 주석을 복잡도 주석으로 오인하기.
+- 함수 본문 안의 알고리즘 설명 주석(예: \`// 인접 리스트 생성\`) 을 복잡도 주석으로 오인하기.
+
+## 실측 패턴 예시
+
+### 예시 X1 — 원문 복사 + matches 엄격 (멀티 풀이)
+입력:
+L1: // tc: O(n^4)
+L2: const findMin_math = (nums) => Math.min(...nums);
+L3:
+L4: // tc: O(n^7)
+L5: const findMin_naive = (nums) => { /* 단순 순회 */ };
+L6:
+L7: // tc: O(n^2*logn)
+L8: const findMin = (nums) => { /* 이진 탐색 */ };
+
+올바른 출력 (요약):
 [
-  { name: "findMin_math",  userTime: "O(n^4)", userSpace: "O(n)", hasUserAnnotation: true  },
-  { name: "findMin_naive", userTime: "O(n^3)", userSpace: "O(1)", hasUserAnnotation: true  },
-  { name: "findMin",       userTime: null,     userSpace: null,   hasUserAnnotation: false }
+  { name: "findMin_math",  userTime: "O(n^4)",      actualTime: "O(n)",     matches.time: false },
+  { name: "findMin_naive", userTime: "O(n^7)",      actualTime: "O(n)",     matches.time: false },
+  { name: "findMin",       userTime: "O(n^2*logn)", actualTime: "O(log n)", matches.time: false }
 ]
+
+잘못된 출력 — **절대 이렇게 만들지 마세요**:
+- userTime: "O(n)" 처럼 actual 을 복사 → 원문 복사 원칙 위반 (F1).
+- matches.time: true 처럼 두 Big-O 가 다름에도 일치로 판정 → matches 엄격 판정 위반 (F2).
+
+### 예시 X2 — 주석 없음 (환각 금지)
+입력:
+L1: export class Solution {
+L2:   /**
+L3:    * @param {number} n
+L4:    * @param {number[][]} edges
+L5:    * @return {boolean}
+L6:    */
+L7:   validTree(n, edges) {
+L8:     // 인접 리스트 생성
+L9:     const adj = {};
+L10:    // ... DFS
+L11:  }
+L12: }
+
+해설:
+- L2–L6 은 JSDoc 파라미터/리턴 설명 → 복잡도 주석 아님.
+- L8, L10 은 알고리즘 단계 설명 → TC/SC 키워드도, Big-O 리터럴도 없음.
+- 따라서 이 파일에는 **유효한 복잡도 주석이 전혀 없음**.
+
+올바른 출력:
+{ name: "Solution.validTree", hasUserAnnotation: false, userTime: null, userSpace: null,
+  actualTime: "O(n+e)", actualSpace: "O(n+e)",
+  matches: { time: false, space: false } }
+
+잘못된 출력 — **절대 이렇게 만들지 마세요**:
+{ hasUserAnnotation: true, userTime: "O(n+e)", userSpace: "O(n+e)", matches: { time: true, space: true } }
+— 소스에 인용할 주석이 없는데 actual 을 복제한 환각 (F3). 절대 금지.
+
+### 예시 X3 — 키워드 없는 Big-O (부정 재확인)
+입력:
+L1: // 목표: O(n) 으로 줄이기
+L2: function twoSum(nums, target) { /* brute force */ }
+
+해설:
+- L1 에 \`O(n)\` 은 있지만, TC/SC/Time/Space/시간복잡도/공간복잡도/Complexity 키워드가 없음.
+- "목표/희망" 언급이지 측정치 아님.
+
+올바른 출력: hasUserAnnotation = false, userTime = null, userSpace = null.
 
 ## 각 풀이에 대해 출력할 필드
 1. name: 함수명 또는 식별 가능한 이름 (예: "twoSum_bruteForce", "Solution.maxArea").
 2. description: 접근 방식 한 줄 설명 (예: "이진 탐색", "HashMap 활용").
 3. actualTime, actualSpace: 코드의 실제 시간/공간 복잡도를 Big-O 표기로 계산.
-4. hasUserAnnotation, userTime, userSpace: 위 "주석 귀속 규칙" + "유효한 복잡도 주석의 정의"에 따라 채웁니다.
+4. hasUserAnnotation, userTime, userSpace: 위 "주석 귀속 규칙" + "유효한 복잡도 주석의 정의" + "원문 복사 원칙" + "인용 가능성 체크" 에 따라 채웁니다.
    - 한쪽만 있으면 다른 쪽은 null.
+   - 인용 불가하면 무조건 null.
 5. matches.time / matches.space:
-   - hasUserAnnotation=false면 둘 다 false.
-   - 사용자 값이 있는 항목만 actual과 비교하여 일치 여부를 boolean으로 반환.
+   - hasUserAnnotation=false 면 둘 다 false.
+   - 사용자 값이 있는 항목만 actual 과 비교하여 일치 여부를 boolean 으로 반환.
+   - **matches 엄격 판정**:
+     - 서로 다른 Big-O 클래스는 **절대로** true 가 아닙니다. 크기만 비슷해 보여도 false.
+     - 정규화 후 문자열이 같아야만 true:
+       · 공백 무시: \`O(n log n)\` == \`O(nlogn)\`
+       · 거듭제곱 표기 통일: \`O(n^2)\` == \`O(n²)\` == \`O(n**2)\`
+       · 곱셈 기호: \`O(n*log n)\` == \`O(n log n)\`
+     - 다음은 **모두 false** (실수 하기 쉬운 예):
+       · \`O(n^2 * log n)\` vs \`O(log n)\` → false (n^2 항이 사라지지 않음)
+       · \`O(n^4)\` vs \`O(n)\`              → false
+       · \`O(n + m)\` vs \`O(n)\`            → false (m 항이 사라지지 않음)
+       · \`O(2^n)\` vs \`O(n^2)\`            → false (지수 vs 다항)
+     - 한쪽이 null 이면 그쪽 matches 는 무조건 false.
 6. feedback (한국어 1-3문장):
    - 일치하면: 칭찬 + 핵심 근거 짧게.
    - 불일치하면: 어디가 왜 다른지 설명 + "다시 분석해보시는 것을 권장드립니다" 톤.
@@ -104,6 +191,21 @@ L9: const findMin = (nums) => { /* ... */ };
    - 의미 있는 한 단계 이상 개선 여지가 있을 때만 제안 (예: O(n^2) → O(n)).
    - 문제 제약을 모를 수 있으므로 단정 금지. "고려해볼 만한 대안:" 톤.
    - 개선 여지 없으면 "현재 구현이 적절해 보입니다."
+
+## 출력 직전 자가 점검 (각 solution 마다)
+아래 7개 질문에 모두 "예" 라고 답할 수 있을 때만 그 값을 유지합니다.
+
+1. 이 풀이가 실제 함수/메서드/클래스 선언에 대응하는가?
+2. userTime 이 null 이 아니라면, 그 문자열을 소스의 특정 라인에서 **문자 그대로** 인용 가능한가?
+3. userSpace 에 대해서도 (2) 가 성립하는가?
+4. userTime/userSpace 중 어느 하나라도 값이 있다면 hasUserAnnotation=true 인가?
+   (둘 다 null 이면 hasUserAnnotation=false 여야 함)
+5. matches.time=true 라면 normalize(userTime) === normalize(actualTime) 인가?
+6. matches.space=true 라면 normalize(userSpace) === normalize(actualSpace) 인가?
+7. 이 풀이의 userTime/userSpace 가 **다른 풀이의 주석**에서 온 것이 아닌가?
+   (헤더 바로 위 영역에서만 가져왔는지 재확인)
+
+하나라도 "아니오" 라면 해당 필드를 바로잡으세요. 의심스러우면 null / false 로 둡니다.
 
 반드시 아래 JSON 스키마로만 응답:
 {
