@@ -50,7 +50,7 @@ describe("upsertLearningStatusComment — usage history accumulation", () => {
 
     const body = parseBody(post);
     expect(body).toContain("🔢 API 사용량 (gpt-4.1-nano)");
-    expect(body).toContain("| #1 | 100 | 50 | 150 |");
+    expect(body).toContain("| 1 | 100 | 50 | 150 |");
     // single-row history => no totals row
     expect(body).not.toContain("**합계**");
     // hidden marker stores an array
@@ -99,9 +99,9 @@ describe("upsertLearningStatusComment — usage history accumulation", () => {
 
     const body = parseBody(patch);
     // all three calls present, in order
-    expect(body).toContain("| #1 | 100 | 50 | 150 |");
-    expect(body).toContain("| #2 | 200 | 80 | 280 |");
-    expect(body).toContain("| #3 | 300 | 120 | 420 |");
+    expect(body).toContain("| 1 | 100 | 50 | 150 |");
+    expect(body).toContain("| 2 | 200 | 80 | 280 |");
+    expect(body).toContain("| 3 | 300 | 120 | 420 |");
     // totals row appears once history.length > 1
     expect(body).toContain("| **합계** | **600** | **250** | **850** |");
     // marker is rewritten with the full array
@@ -146,7 +146,7 @@ describe("upsertLearningStatusComment — usage history accumulation", () => {
     const patch = calls.find((c) => c.init.method === "PATCH");
     const body = parseBody(patch);
 
-    expect(body).toContain("| #1 | 999 | 111 | 1,110 |");
+    expect(body).toContain("| 1 | 999 | 111 | 1,110 |");
     expect(body).not.toContain("**합계**");
 
     globalThis.fetch = originalFetch;

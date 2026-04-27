@@ -84,7 +84,7 @@ function formatUsageSection(history) {
     const { prompt, completion } = history[i];
     const total = prompt + completion;
     const cost = calcCost(prompt, completion);
-    lines.push(`| #${i + 1} | ${fmt(prompt)} | ${fmt(completion)} | ${fmt(total)} | $${cost.toFixed(6)} |`);
+    lines.push(`| ${i + 1} | ${fmt(prompt)} | ${fmt(completion)} | ${fmt(total)} | $${cost.toFixed(6)} |`);
     totalPrompt += prompt;
     totalCompletion += completion;
   }
