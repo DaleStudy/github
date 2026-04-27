@@ -487,6 +487,10 @@ describe("checkWeeks", () => {
    - GitHub 인증 로직 (`generateGitHubAppToken`, `createJWT` 등)은 모든 기능에서 공통으로 사용
    - 새 기능 추가 시 기존 유틸리티 함수 활용
 
+7. **코멘트 숨김 마커 직렬화 포맷 변경**
+   - 코멘트에 `<!-- xxx-data: ... -->` 형태로 숨겨 저장하는 데이터의 직렬화 포맷(객체↔배열 등)을 바꿀 때는 **정규식·문서 주석·테스트를 같은 PR에서 함께 갱신**
+   - 파싱이 `Array.isArray` 같은 방어 코드로 빈 값에 fallback하면 회귀가 조용히 묻혀 디버깅이 어려워짐
+
 ## 관련 문서
 
 - [Cloudflare Workers Docs](https://developers.cloudflare.com/workers/)
