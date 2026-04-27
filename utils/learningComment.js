@@ -10,10 +10,15 @@ import { getGitHubHeaders } from "./github.js";
 const COMMENT_MARKER = "<!-- dalestudy-learning-status -->";
 
 /**
- * Hidden marker for embedding cumulative usage data in the comment.
- * Format: <!-- usage-data: {"prompt":N,"completion":N,"requests":N} -->
+ * Hidden marker for embedding per-request usage history in the comment.
+ * Format: <!-- usage-data: [{"prompt":N,"completion":N}, ...] -->
+ *
+ * The capture group must match the array — earlier versions of this regex
+ * matched only `{...}` and silently captured the first object inside the
+ * array, which made `parseUsageFromComment` always return `[]` and broke
+ * cumulative aggregation across PR updates.
  */
-const USAGE_DATA_RE = /<!-- usage-data: ({.*?}) -->/;
+const USAGE_DATA_RE = /<!-- usage-data: (\[.*?\]) -->/;
 
 /** gpt-4.1-nano pricing (USD per token) */
 const INPUT_COST_PER_TOKEN = 0.10 / 1_000_000;
