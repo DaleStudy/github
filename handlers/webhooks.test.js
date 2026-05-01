@@ -264,7 +264,7 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     });
   });
 
-  it("OPENAI_API_KEY, INTERNAL_SECRET, WORKER_URL 이 모두 설정되면 ctx.waitUntil 로 self-fetch 3 회를 디스패치한다", async () => {
+  it("OPENAI_API_KEY, INTERNAL_SECRET, WORKER_URL 이 모두 설정되면 ctx.waitUntil 로 self-fetch 2 회를 디스패치한다", async () => {
     const ctx = makeCtx();
     const env = {
       OPENAI_API_KEY: "fake-openai",
@@ -279,12 +279,13 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(ctx.waitUntil).toHaveBeenCalledTimes(3);
+    expect(ctx.waitUntil).toHaveBeenCalledTimes(2);
 
     const fetchedUrls = globalThis.fetch.mock.calls.map(([url]) => url);
     expect(fetchedUrls).toContain("https://worker.test/internal/tag-patterns");
     expect(fetchedUrls).toContain("https://worker.test/internal/learning-status");
-    expect(fetchedUrls).toContain("https://worker.test/internal/complexity-analysis");
+    // complexity-analysis 는 tag-patterns 에 합본되어 별도 디스패치 없음
+    expect(fetchedUrls).not.toContain("https://worker.test/internal/complexity-analysis");
 
     const dispatchCall = globalThis.fetch.mock.calls.find(([url]) =>
       url.endsWith("/internal/tag-patterns")

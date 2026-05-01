@@ -1,21 +1,17 @@
 /**
- * 시간/공간 복잡도 자동 분석.
- * PR opened/reopened/synchronize 시 호출된다.
+ * 시간/공간 복잡도 분석 (분석 함수 + 순수 헬퍼).
+ *
+ * 오케스트레이션과 댓글 게시는 tag-patterns 핸들러가 담당하며, 이 모듈은
+ * OpenAI 호출(`callComplexityAnalysis`)과 사용자 주석 처리/매칭 헬퍼,
+ * 한 파일분 섹션 렌더러(`renderComplexitySection`)만 제공한다.
  *
  * 책임 분담 (plan v4):
  *  - 코드: 사용자 복잡도 주석 제거 / 추출 / matches 판정.
  *  - LLM : actualTime / actualSpace / feedback / suggestion / headerLine 만 책임.
  */
 
-import { getGitHubHeaders } from "../utils/github.js";
-import { hasMaintenanceLabel } from "../utils/validation.js";
-
 // ── 상수 ──────────────────────────────────────────
 
-const SOLUTION_PATH_REGEX = /^[^/]+\/[^/]+\.[^.]+$/;
-const COMPLEXITY_COMMENT_MARKER = "<!-- dalestudy-complexity-analysis -->";
-const MAX_FILE_SIZE = 15000;
-const MAX_TOTAL_SIZE = 60000;
 const FILE_DELIMITER = "=====";
 
 const COMMENT_START_PATTERN = /^(?:\/\/|#|--|;|\/\*|\*(?!\/)|"""|''')/;
@@ -244,7 +240,7 @@ export function composeSolution(modelSol, originalContent) {
   };
 }
 
-async function callComplexityAnalysis(fileEntries, apiKey) {
+export async function callComplexityAnalysis(fileEntries, apiKey) {
   const userPrompt = fileEntries
     .map(
       (f) =>
@@ -356,225 +352,59 @@ function buildSolutionBody(solution) {
   return lines;
 }
 
-function formatComplexityCommentBody(entries) {
+/**
+ * 한 파일분 복잡도 섹션을 렌더링한다.
+ * 패턴 태그 코멘트에 묻어가는 형태이므로 마커/푸터 없이
+ * `### 📊 ...` 헤더부터 시작한다.
+ *
+ * @param {{problemName: string, solutions: Array}} entry
+ * @returns {string} 렌더링된 섹션 (마지막에 \n 없음)
+ */
+export function renderComplexitySection(entry) {
   const lines = [];
-  lines.push(COMPLEXITY_COMMENT_MARKER);
   lines.push("### 📊 시간/공간 복잡도 분석");
   lines.push("");
 
-  for (const { problemName, solutions } of entries) {
-    lines.push(`### ${problemName}`);
+  const solutions = entry?.solutions || [];
+
+  if (solutions.length === 0) {
+    lines.push(`> ⚠️ 분석 결과가 없습니다.`);
+    return lines.join("\n");
+  }
+
+  const isMulti = solutions.length > 1;
+  const hasAnyAnnotationMissing = solutions.some((s) => !s.hasUserAnnotation);
+
+  if (isMulti) {
+    lines.push(
+      `> ℹ️ 이 파일에는 **${solutions.length}가지 풀이**가 포함되어 있어 각각 분석합니다.`
+    );
     lines.push("");
 
-    if (!solutions || solutions.length === 0) {
-      lines.push(`> ⚠️ 분석 결과가 없습니다.`);
-      lines.push("");
-      continue;
-    }
-
-    const isMulti = solutions.length > 1;
-    const hasAnyAnnotationMissing = solutions.some(
-      (s) => !s.hasUserAnnotation
-    );
-
-    if (isMulti) {
+    solutions.forEach((sol, idx) => {
+      const summaryResult = buildSummaryResult(sol);
+      lines.push(`<details>`);
       lines.push(
-        `> ℹ️ 이 파일에는 **${solutions.length}가지 풀이**가 포함되어 있어 각각 분석합니다.`
+        `<summary>풀이 ${idx + 1}: <code>${sol.name}</code> — ${summaryResult}</summary>`
       );
       lines.push("");
-
-      solutions.forEach((sol, idx) => {
-        const summaryResult = buildSummaryResult(sol);
-        lines.push(`<details>`);
-        lines.push(
-          `<summary>풀이 ${idx + 1}: <code>${sol.name}</code> — ${summaryResult}</summary>`
-        );
-        lines.push("");
-        lines.push(...buildSolutionBody(sol));
-        lines.push(`</details>`);
-        lines.push("");
-      });
-    } else {
-      lines.push(...buildSolutionBody(solutions[0]));
-    }
-
-    if (hasAnyAnnotationMissing) {
-      lines.push("> 💡 풀이에 시간/공간 복잡도를 주석으로 남겨보세요!");
+      lines.push(...buildSolutionBody(sol));
+      lines.push(`</details>`);
       lines.push("");
-    }
-  }
-
-  lines.push("---");
-  lines.push("🤖 이 댓글은 GitHub App을 통해 자동으로 작성되었습니다.");
-
-  return lines.join("\n") + "\n";
-}
-
-// ── 댓글 upsert ──────────────────────────────────
-
-async function upsertComplexityComment(
-  repoOwner,
-  repoName,
-  prNumber,
-  body,
-  appToken
-) {
-  const baseUrl = `https://api.github.com/repos/${repoOwner}/${repoName}`;
-
-  const listResponse = await fetch(
-    `${baseUrl}/issues/${prNumber}/comments?per_page=100`,
-    { headers: getGitHubHeaders(appToken) }
-  );
-  if (!listResponse.ok) {
-    throw new Error(
-      `Failed to list comments: ${listResponse.status} ${listResponse.statusText}`
-    );
-  }
-
-  const comments = await listResponse.json();
-  const existing = comments.find(
-    (c) =>
-      c.user?.type === "Bot" &&
-      c.body?.includes(COMPLEXITY_COMMENT_MARKER)
-  );
-
-  const headers = {
-    ...getGitHubHeaders(appToken),
-    "Content-Type": "application/json",
-  };
-
-  if (existing) {
-    const res = await fetch(`${baseUrl}/issues/comments/${existing.id}`, {
-      method: "PATCH",
-      headers,
-      body: JSON.stringify({ body }),
     });
-    if (!res.ok) {
-      throw new Error(
-        `Failed to update complexity comment ${existing.id}: ${res.status}`
-      );
-    }
-    console.log(
-      `[complexity] Updated comment ${existing.id} on PR #${prNumber}`
-    );
   } else {
-    const res = await fetch(`${baseUrl}/issues/${prNumber}/comments`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ body }),
-    });
-    if (!res.ok) {
-      throw new Error(`Failed to post complexity comment: ${res.status}`);
-    }
-    console.log(`[complexity] Created complexity comment on PR #${prNumber}`);
+    lines.push(...buildSolutionBody(solutions[0]));
   }
+
+  if (hasAnyAnnotationMissing) {
+    lines.push("> 💡 풀이에 시간/공간 복잡도를 주석으로 남겨보세요!");
+  }
+
+  // trailing 빈 줄 제거
+  while (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+
+  return lines.join("\n");
 }
 
-// ── 오케스트레이션 (export) ───────────────────────
-
-export async function analyzeComplexity(
-  repoOwner,
-  repoName,
-  prNumber,
-  prData,
-  appToken,
-  openaiApiKey
-) {
-  if (prData.draft === true) {
-    console.log(`[complexity] Skipping PR #${prNumber}: draft`);
-    return { skipped: "draft" };
-  }
-  const labels = (prData.labels || []).map((l) => l.name);
-  if (hasMaintenanceLabel(labels)) {
-    console.log(`[complexity] Skipping PR #${prNumber}: maintenance`);
-    return { skipped: "maintenance" };
-  }
-
-  // 1) PR files
-  const filesRes = await fetch(
-    `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/files?per_page=100`,
-    { headers: getGitHubHeaders(appToken) }
-  );
-  if (!filesRes.ok) {
-    throw new Error(
-      `Failed to list PR files: ${filesRes.status} ${filesRes.statusText}`
-    );
-  }
-  const allFiles = await filesRes.json();
-
-  const solutionFiles = allFiles.filter(
-    (f) =>
-      (f.status === "added" || f.status === "modified") &&
-      SOLUTION_PATH_REGEX.test(f.filename)
-  );
-
-  console.log(
-    `[complexity] PR #${prNumber}: ${allFiles.length} files, ${solutionFiles.length} solutions`
-  );
-
-  if (solutionFiles.length === 0) {
-    return { skipped: "no-solution-files" };
-  }
-
-  // 2) 모든 솔루션 파일 다운로드
-  const fileEntries = [];
-  let totalSize = 0;
-
-  for (const file of solutionFiles) {
-    const problemName = file.filename.split("/")[0];
-    try {
-      const rawRes = await fetch(file.raw_url);
-      if (!rawRes.ok) {
-        console.error(
-          `[complexity] Failed to fetch ${file.filename}: ${rawRes.status}`
-        );
-        continue;
-      }
-      let content = await rawRes.text();
-      if (content.length > MAX_FILE_SIZE) {
-        content = content.slice(0, MAX_FILE_SIZE);
-      }
-
-      if (totalSize + content.length > MAX_TOTAL_SIZE) {
-        console.log(
-          `[complexity] Reached MAX_TOTAL_SIZE, skipping remaining files`
-        );
-        break;
-      }
-
-      totalSize += content.length;
-      fileEntries.push({ problemName, content });
-    } catch (error) {
-      console.error(
-        `[complexity] Failed to download ${file.filename}: ${error.message}`
-      );
-    }
-  }
-
-  if (fileEntries.length === 0) {
-    return { skipped: "all-downloads-failed" };
-  }
-
-  // 3) OpenAI 1회 호출로 모든 파일 분석
-  const analysisResults = await callComplexityAnalysis(
-    fileEntries,
-    openaiApiKey
-  );
-
-  // 4) 결과를 fileEntries 순서에 맞춰 매핑
-  const entries = fileEntries.map((fe) => {
-    const match = analysisResults.find(
-      (r) => r.problemName === fe.problemName
-    );
-    return match || { problemName: fe.problemName, solutions: [] };
-  });
-
-  // 5) 본문 빌드 + upsert
-  const body = formatComplexityCommentBody(entries);
-  await upsertComplexityComment(repoOwner, repoName, prNumber, body, appToken);
-
-  return {
-    analyzed: entries.filter((e) => e.solutions.length > 0).length,
-    total: fileEntries.length,
-  };
-}
