@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "bun:test";
 
 import { tagPatterns } from "../handlers/tag-patterns.js";
 import { postLearningStatus } from "../handlers/learning-status.js";
-import { analyzeComplexity } from "../handlers/complexity-analysis.js";
 
 const REPO_OWNER = "DaleStudy";
 const REPO_NAME = "leetcode-study";
@@ -42,7 +41,7 @@ describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", (
     vi.clearAllMocks();
   });
 
-  it("tagPatterns 는 50 회 이하 subrequest 를 호출한다 (예상 22: files 1 + 코멘트 목록 1 + DELETE 5 + 5×(raw+openai+post))", async () => {
+  it("tagPatterns 는 50 회 이하 subrequest 를 호출한다 (예상 25: files 1 + raw 5 + 패턴 코멘트 목록 1 + DELETE 5 + 패턴 OpenAI 5 + 복잡도 OpenAI 1 + POST 5 + 레거시 issue 코멘트 목록 1 + 레거시 DELETE 1)", async () => {
     globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
       const urlStr = typeof url === "string" ? url : url.url;
       const method = opts?.method ?? "GET";
@@ -71,6 +70,35 @@ describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", (
       }
 
       if (urlStr.includes("openai.com/v1/chat/completions")) {
+        const body = JSON.parse(opts.body);
+        const isComplexity = body.messages[0].content.includes(
+          "시간/공간 복잡도를 분석"
+        );
+        if (isComplexity) {
+          return okJson({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    files: SOLUTION_FILES.map((_, i) => ({
+                      problemName: `problem-${i + 1}`,
+                      solutions: [
+                        {
+                          name: "solution",
+                          headerLine: 1,
+                          actualTime: "O(n)",
+                          actualSpace: "O(1)",
+                          feedback: "fb",
+                          suggestion: "sg",
+                        },
+                      ],
+                    })),
+                  }),
+                },
+              },
+            ],
+          });
+        }
         return okJson({
           choices: [
             {
@@ -90,6 +118,20 @@ describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", (
         return okJson({ id: 999 });
       }
 
+      // 레거시 단독 복잡도 issue comment 마이그레이션
+      if (urlStr.includes(`/issues/${PR_NUMBER}/comments`) && method === "GET") {
+        return okJson([
+          {
+            id: 9999,
+            user: { type: "Bot" },
+            body: "<!-- dalestudy-complexity-analysis -->\n레거시",
+          },
+        ]);
+      }
+      if (urlStr.includes("/issues/comments/") && method === "DELETE") {
+        return okJson({});
+      }
+
       throw new Error(`Unexpected fetch in tagPatterns mock: ${method} ${urlStr}`);
     });
 
@@ -107,7 +149,7 @@ describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", (
     const fetchCount = globalThis.fetch.mock.calls.length;
 
     expect(result.tagged).toBe(5);
-    expect(fetchCount).toBe(22);
+    expect(fetchCount).toBe(25);
     expect(fetchCount).toBeLessThan(50);
   });
 
@@ -231,75 +273,4 @@ describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", (
     expect(fetchCount).toBeLessThan(50);
   });
 
-  it("analyzeComplexity 는 50 회 이하 subrequest 를 호출한다 (예상 9: PR files 1 + 5×raw + OpenAI 1 + 이슈 코멘트 목록 1 + POST 1)", async () => {
-    globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
-      const urlStr = typeof url === "string" ? url : url.url;
-      const method = opts?.method ?? "GET";
-
-      if (urlStr.includes(`/pulls/${PR_NUMBER}/files`)) {
-        return okJson(SOLUTION_FILES);
-      }
-
-      if (urlStr.startsWith("https://raw.example.com/")) {
-        return okText("// TC: O(n)\n// SC: O(1)\nfunction solution() { return 0; }");
-      }
-
-      if (urlStr.includes("openai.com/v1/chat/completions")) {
-        return okJson({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  files: SOLUTION_FILES.map((f, i) => ({
-                    problemName: `problem-${i + 1}`,
-                    solutions: [
-                      {
-                        name: "solution",
-                        description: "기본 풀이",
-                        hasUserAnnotation: true,
-                        userTime: "O(n)",
-                        userSpace: "O(1)",
-                        actualTime: "O(n)",
-                        actualSpace: "O(1)",
-                        matches: { time: true, space: true },
-                        feedback: "정확합니다!",
-                        suggestion: "현재 구현이 적절해 보입니다.",
-                      },
-                    ],
-                  })),
-                }),
-              },
-            },
-          ],
-        });
-      }
-
-      if (urlStr.includes(`/issues/${PR_NUMBER}/comments`) && method === "GET") {
-        return okJson([]);
-      }
-
-      if (urlStr.includes(`/issues/${PR_NUMBER}/comments`) && method === "POST") {
-        return okJson({ id: 600 });
-      }
-
-      throw new Error(`Unexpected fetch in analyzeComplexity mock: ${method} ${urlStr}`);
-    });
-
-    const prData = { draft: false, labels: [] };
-    const result = await analyzeComplexity(
-      REPO_OWNER,
-      REPO_NAME,
-      PR_NUMBER,
-      prData,
-      APP_TOKEN,
-      OPENAI_KEY
-    );
-
-    const fetchCount = globalThis.fetch.mock.calls.length;
-
-    expect(result.analyzed).toBe(5);
-    expect(result.total).toBe(5);
-    expect(fetchCount).toBe(9);
-    expect(fetchCount).toBeLessThan(50);
-  });
 });

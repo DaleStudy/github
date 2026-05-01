@@ -23,7 +23,6 @@ import { performAIReview, addReactionToComment } from "../utils/prReview.js";
 import { hasApprovedReview, safeJson } from "../utils/prActions.js";
 import { tagPatterns } from "./tag-patterns.js";
 import { postLearningStatus } from "./learning-status.js";
-import { analyzeComplexity } from "./complexity-analysis.js";
 
 /**
  * GitHub webhook 이벤트 처리
@@ -325,29 +324,7 @@ async function handlePullRequestEvent(payload, env, ctx) {
       )
     );
 
-    // 복잡도 분석 디스패치
-    ctx.waitUntil(
-      (async () => {
-        try {
-          const res = await fetch(`${baseUrl}/internal/complexity-analysis`, {
-            method: "POST",
-            headers: dispatchHeaders,
-            body: JSON.stringify({
-              ...commonPayload,
-              prData: pr,
-            }),
-          });
-          if (!res.ok) {
-            const text = await res.text().catch(() => "");
-            console.error(`[dispatch] complexityAnalysis HTTP ${res.status}: ${text}`);
-          }
-        } catch (err) {
-          console.error(`[dispatch] complexityAnalysis failed: ${err.message}`);
-        }
-      })()
-    );
-
-    console.log(`[handlePullRequestEvent] Dispatched 3 AI handlers for PR #${prNumber}`);
+    console.log(`[handlePullRequestEvent] Dispatched 2 AI handlers for PR #${prNumber}`);
   } else if (env.OPENAI_API_KEY) {
     // INTERNAL_SECRET/WORKER_URL 미설정 시 기존 방식으로 폴백 (동일 invocation에서 순차 실행)
     console.warn("[handlePullRequestEvent] INTERNAL_SECRET or WORKER_URL not set, running handlers in-process");
@@ -386,19 +363,6 @@ async function handlePullRequestEvent(payload, env, ctx) {
       await postLearningStatus(repoOwner, repoName, prNumber, pr.user.login, appToken, env.OPENAI_API_KEY);
     } catch (error) {
       console.error(`[handlePullRequestEvent] learningStatus failed: ${error.message}`);
-    }
-
-    try {
-      await analyzeComplexity(
-        repoOwner,
-        repoName,
-        prNumber,
-        pr,
-        appToken,
-        env.OPENAI_API_KEY
-      );
-    } catch (error) {
-      console.error(`[handlePullRequestEvent] complexity analysis failed: ${error.message}`);
     }
   }
 
