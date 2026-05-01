@@ -2,7 +2,9 @@
  * 시간/공간 복잡도 자동 분석.
  * PR opened/reopened/synchronize 시 호출된다.
  *
- * 모든 로직(상수, OpenAI 호출, 댓글 포맷, upsert)을 이 파일에 응집한다.
+ * 책임 분담 (plan v4):
+ *  - 코드: 사용자 복잡도 주석 제거 / 추출 / matches 판정.
+ *  - LLM : actualTime / actualSpace / feedback / suggestion / headerLine 만 책임.
  */
 
 import { getGitHubHeaders } from "../utils/github.js";
@@ -16,214 +18,181 @@ const MAX_FILE_SIZE = 15000;
 const MAX_TOTAL_SIZE = 60000;
 const FILE_DELIMITER = "=====";
 
+const COMMENT_START_PATTERN = /^(?:\/\/|#|--|;|\/\*|\*(?!\/)|"""|''')/;
+const TIME_KEYWORD_PATTERN =
+  /\b(?:TC|tc|Time|time)\b|시간\s*복잡도/;
+const SPACE_KEYWORD_PATTERN =
+  /\b(?:SC|sc|Space|space)\b|공간\s*복잡도/;
+const BIG_O_LITERAL_PATTERN = /[OΘΩoω]\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)/;
+
+// "class Solution:" / "public class Foo {" / "impl X for Y {" 등 — 메서드 헤더의
+// 외곽 선언. 사용자 복잡도 주석은 보통 이 외곽 선언 위에 적힌다.
+const CLASS_WRAPPER_PATTERN =
+  /^\s*(?:public\s+|private\s+|protected\s+|abstract\s+|final\s+|export\s+(?:default\s+)?|pub\s+)*(?:class|interface|struct|trait|impl|enum)\b[^{]*[:{]\s*$/;
+
+// ── 사용자 복잡도 주석 처리 (코드 책임) ──────────
+
+export function isComplexityCommentLine(line) {
+  if (typeof line !== "string") return false;
+  const trimmed = line.trim();
+  if (!COMMENT_START_PATTERN.test(trimmed)) return false;
+  const hasKeyword =
+    TIME_KEYWORD_PATTERN.test(line) || SPACE_KEYWORD_PATTERN.test(line);
+  const hasBigO = BIG_O_LITERAL_PATTERN.test(line);
+  return hasKeyword && hasBigO;
+}
+
+export function stripComplexityComments(content) {
+  return content
+    .split("\n")
+    .map((line) => (isComplexityCommentLine(line) ? "" : line))
+    .join("\n");
+}
+
+export function extractBigO(line) {
+  const m = line.match(BIG_O_LITERAL_PATTERN);
+  return m ? m[0] : null;
+}
+
+function isCommentLine(line) {
+  const trimmed = line.trim();
+  if (trimmed === "") return false;
+  return COMMENT_START_PATTERN.test(trimmed) || trimmed.startsWith("*/");
+}
+
+function isClassWrapperLine(line) {
+  return typeof line === "string" && CLASS_WRAPPER_PATTERN.test(line);
+}
+
+/**
+ * 헤더 라인 위쪽으로 빈 줄 또는 비-주석 라인을 만나기 전까지의 연속 주석 블록에서
+ * 시간/공간 복잡도 주석을 추출한다.
+ *
+ * 단, 외곽 클래스/struct/impl 선언 라인(예: `class Solution:`)은 투명하게 통과한다.
+ * Python LeetCode 풀이처럼 사용자 주석이 클래스 선언 위에 있고, 모델이 메서드 라인을
+ * headerLine 으로 반환하는 흔한 패턴을 지원하기 위함.
+ */
+export function extractUserAnnotations(content, headerLine) {
+  if (!Number.isInteger(headerLine) || headerLine <= 1) {
+    return { userTime: null, userSpace: null };
+  }
+  const lines = content.split("\n");
+  let userTime = null;
+  let userSpace = null;
+  for (let i = headerLine - 2; i >= 0; i--) {
+    const line = lines[i];
+    if (line === undefined) break;
+    if (line.trim() === "") break;
+
+    if (isClassWrapperLine(line)) {
+      continue; // 외곽 클래스 선언은 투명 통과
+    }
+
+    if (!isCommentLine(line)) break;
+
+    if (userTime === null && TIME_KEYWORD_PATTERN.test(line)) {
+      const bigO = extractBigO(line);
+      if (bigO) userTime = bigO;
+    }
+    if (userSpace === null && SPACE_KEYWORD_PATTERN.test(line)) {
+      const bigO = extractBigO(line);
+      if (bigO) userSpace = bigO;
+    }
+    if (userTime !== null && userSpace !== null) break;
+  }
+  return { userTime, userSpace };
+}
+
+/**
+ * 모델이 actualTime/actualSpace 에 부연 설명을 붙이는 글리치를 정리한다.
+ * 예: "O(n) (최악)" → "O(n)", "O(m * 26^{k}) (최악: ...)" → "O(m * 26^{k})".
+ * 첫 번째 균형 맞춘 Big-O 리터럴만 남긴다.
+ */
+export function cleanBigO(value) {
+  if (typeof value !== "string") return value;
+  const m = value.match(BIG_O_LITERAL_PATTERN);
+  return m ? m[0] : value;
+}
+
+export function bigOEquals(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const norm = (s) =>
+    s
+      .replace(/\s+/g, "")
+      .replace(/²/g, "^2")
+      .replace(/³/g, "^3")
+      .replace(/⁴/g, "^4")
+      .replace(/⁵/g, "^5")
+      .replace(/⁶/g, "^6")
+      .replace(/⁷/g, "^7")
+      .replace(/⁸/g, "^8")
+      .replace(/⁹/g, "^9")
+      .replace(/\*\*/g, "^")
+      .toLowerCase();
+  return norm(a) === norm(b);
+}
+
 // ── OpenAI 호출 ───────────────────────────────────
 
 const SYSTEM_PROMPT = `당신은 알고리즘 풀이의 시간/공간 복잡도를 분석하는 전문가입니다.
 
-여러 문제의 솔루션 코드가 구분자(===== {문제명} =====)로 나뉘어 제공됩니다.
-각 파일은 라인 번호 prefix "L{n}: "와 함께 전달됩니다. 주석 귀속 판단에 이 라인 번호를 활용하세요.
-각 문제별로 독립적으로 분석하세요.
+# 입력
+"===== 문제명 =====" 구분자로 여러 파일이 제공됩니다.
+각 라인에 "L{n}: " 라인 번호 prefix 가 붙어 있습니다.
 
-## 풀이(solution) 경계
-하나의 문제 안에 같은 문제를 여러 가지 방식으로 푼 풀이가 포함될 수 있습니다.
-풀이는 top-level 함수/메서드/클래스 선언 단위로 구분합니다. 선언이 시작된 라인을 "헤더 라인",
-본문이 끝난 라인을 "종료 라인"이라 합니다.
-- 언어별 헤더 예: JS의 \`function\`/\`const ... = (...) =>\`, Python의 \`def\`/\`class\`,
-  Rust의 \`fn\`/\`impl { pub fn ... }\`, Go의 \`func\`, Java/Kotlin의 메서드 선언 등.
-- 파일 상단부터 순서대로 풀이 1..N으로 번호를 붙입니다.
-- 중첩 함수(inner helper)는 독립 풀이로 세지 않습니다.
+전달되는 코드에서 **사용자가 작성한 시간/공간 복잡도 주석은 이미 자동 제거**되어 있습니다.
+즉 코드에 어떤 주석이 남아 있든 거기엔 복잡도 주장이 없습니다.
+당신은 **코드의 동작만으로** 실제 복잡도를 판정하면 됩니다.
+사용자의 시간/공간 분석값은 다른 시스템이 별도로 추출하므로 신경 쓰지 않아도 됩니다.
 
-## 주석 귀속 규칙 (엄격)
-풀이 k의 시간/공간 복잡도 주석은 다음 두 영역에서만 찾습니다.
+# 풀이(solution) 구분
+한 파일에 여러 풀이가 있을 수 있습니다. 풀이는 top-level 함수/메서드/클래스 선언 단위로 셉니다.
+중첩 함수/inner helper 는 독립 풀이로 세지 않습니다.
 
-1) 헤더 바로 위 영역
-   - 풀이 k의 헤더 라인 바로 윗줄부터 위로 올라가면서 **빈 줄을 만나면 즉시 중단**합니다.
-   - 풀이 k-1이 존재한다면 풀이 k-1의 종료 라인을 넘어가지 않습니다 (k=1이면 파일 시작이 하한).
-   - 즉, 풀이 k의 헤더에 "붙어 있는" 연속된 주석 블록만 대상입니다.
+# 각 풀이마다 결정할 7개 값
 
-2) 본문 첫 라인 영역
-   - 풀이 k의 헤더 다음 라인에 붙어 있는 연속된 주석 블록(예: Python docstring, 함수 첫 줄 \`// ...\`).
+1. **name** — 함수명 또는 "클래스.메서드" 형식. 예: "twoSum", "Solution.maxArea", "WordDictionary.addWord".
+   주석 텍스트나 한국어 문구를 절대 name 으로 사용하지 마세요.
+2. **headerLine** — 풀이 헤더가 시작되는 라인 번호 (정수).
+   예: \`function twoSum(...) {\` 가 L7 이면 7. \`class Solution:\` 만으로 시작하면 그 라인.
+   클래스 안에 메서드가 하나라도 메서드 라인 또는 클래스 라인 어느 쪽이든 무방
+   (외곽 클래스 선언은 추출 시 투명 통과 처리됨).
+   JSDoc/docstring/주석 라인은 헤더가 아닙니다 — 실제 코드 선언 라인을 가리키세요.
+3. **description** — 알고리즘/접근 방식 한 줄 요약 (한국어).
+4. **actualTime** — 코드 동작 기준 실제 시간 복잡도. **순수 Big-O 표기만**.
+   예: "O(n)", "O(n log n)", "O(n^2)", "O(n + m)", "O(V + E)".
+   부연 설명/한국어/괄호 코멘트 금지. 예시 금지: "O(n) (최악)", "O(n) for n nodes".
+5. **actualSpace** — 코드 동작 기준 실제 공간 복잡도. 같은 규칙 적용.
+6. **feedback** — 한국어 1~2 문장. 어떤 자료구조/알고리즘을 사용했고 왜 그 복잡도가 나오는지 짧게 설명.
+   "matches" 나 "사용자" 같은 메타 표현은 사용하지 마세요. 사용자에게 직접 보여지는 문장입니다.
+7. **suggestion** — 한국어. 한 단계 이상 의미 있는 개선 여지(예: O(n^2)→O(n))가 있을 때만
+   "고려해볼 만한 대안: ..." 톤으로 제안. 없으면 "현재 구현이 적절해 보입니다.".
 
-위 두 영역 밖의 주석은 풀이 k의 주석이 **아닙니다**. 다른 풀이의 영역을 절대 침범하지 마세요.
+# Big-O 표기 규칙
+- 거듭제곱은 \`^\` 사용 (가능하면 O(n^2). O(n²) 도 허용).
+- log 는 공백/곱셈 기호 자유: \`O(n log n)\`, \`O(n*log n)\`, \`O(nlogn)\` 모두 같음.
+- 두 변수: \`O(n + m)\`, \`O(n*m)\`, \`O(V + E)\`.
 
-## 유효한 복잡도 주석의 정의
-주석이 유효한 복잡도 주석으로 인정되려면 다음을 **모두** 만족해야 합니다.
-1. Big-O 리터럴 포함: \`O(...)\`, \`Θ(...)\`, \`Ω(...)\`, \`o(...)\`, \`ω(...)\` 중 하나.
-2. 시간/공간 중 어느 쪽인지를 가리키는 키워드와 같은 라인 또는 같은 주석 블록 안에 있을 것.
-   키워드는 **대소문자 무관**:
-   - 시간 쪽: \`TC\` / \`tc\` / \`Time\` / \`time\` / \`시간복잡도\`
-   - 공간 쪽: \`SC\` / \`sc\` / \`Space\` / \`space\` / \`공간복잡도\`
-   - 공통(모호): \`Complexity\` / \`complexity\` — 시간/공간 판별 가능할 때만 유효.
-3. 시간/공간 중 어느 쪽을 말하는지 판별 가능.
+# problemName
+입력의 \`===== {이름} =====\` 구분자에 적힌 문자열을 **글자 그대로** problemName 에 복사하세요.
+줄여 쓰거나(longest-... → long-...), 단어를 빼거나, 단수/복수 변형을 가하지 마세요.
 
-언어별 주석 스타일(\`//\`, \`#\`, \`/* */\`, \`--\`, \`"""\`)과 한/영 혼합을 허용합니다.
-예: \`// TC: O(n)\`, \`# 시간복잡도: O(n log n)\`, \`/* Space: O(1) */\`, \`// tc: O(n^2)\`.
+# 출력
+다음 JSON 만 응답. 다른 텍스트/마크다운/설명 일체 금지:
 
-판별 불가하거나 위 조건 중 하나라도 어긋나면 그 주석은 **무시**합니다.
-
-## 원문 복사 원칙 (절대 규칙)
-- userTime / userSpace 에는 **원본 주석에 적혀 있는 Big-O 표현을 글자 그대로** 담습니다.
-- 유저의 값이 합리적이든 비합리적이든, **절대 교정하거나 반올림하거나 요약하지 마세요.**
-  예: 유저가 \`O(n^7)\` 이라고 썼다면 userTime 은 **반드시** \`"O(n^7)"\` — actual 이 \`O(n)\` 이어도 그대로.
-- 유저 값이 actual 과 다르면 그 사실은 matches=false 와 feedback 에서 다루세요. userTime/userSpace 에서는 다루지 않습니다.
-- **경고 신호**: userTime 이 actual 과 우연히 같게 떨어질 때, "혹시 내가 actual 을 복붙한 건 아닌가?" 를 점검하세요.
-  원본 소스에서 그 값을 **문자 그대로 인용**할 수 있어야 합니다. 인용할 수 없으면 null 로 바꾸세요.
-
-## 부정 예시 (아래는 모두 "주석 없음"으로 처리)
-- \`// brute force 풀이\` — 접근 방식 설명일 뿐, 복잡도 측정치 아님
-- \`# 두 포인터 사용\` — 알고리즘 언급만
-- \`// 목표: O(n)으로 만들기\` — 목표/희망이지 측정치 아님 (TC/SC 키워드도 없음)
-- \`// 공간 O(1)만 써야 함 (문제 제약)\` — 문제 제약 언급
-- JSDoc \`@param {number} n\` / \`@return {boolean}\` — 파라미터/리턴 타입 설명이지 복잡도 주석 아님
-- 함수 본문 안의 알고리즘 단계 설명 \`// 인접 리스트 생성\` — 복잡도 주석 아님
-- 풀이와 동떨어진 파일 상단의 문제 설명 주석(풀이 귀속 영역 밖)
-
-풀이 k에 유효한 주석이 하나도 없으면:
-  hasUserAnnotation = false, userTime = null, userSpace = null, matches.time = false, matches.space = false.
-
-## 인용 가능성 체크 (환각 방지)
-hasUserAnnotation = true 로 두기 전에 다음을 **모두** 확인하세요.
-  (1) 소스의 특정 라인 번호에서 (TC|SC|Time|Space|시간복잡도|공간복잡도|Complexity) 키워드를
-      **문자 그대로 인용**할 수 있는가? (대소문자 무관)
-  (2) 그 **같은 라인 또는 같은 주석 블록** 안에서 Big-O 리터럴(\`O(...)\` 등)을 **문자 그대로 인용**할 수 있는가?
-  (3) 그 라인이 해당 풀이의 "주석 귀속 규칙" 이 허용하는 영역 안에 있는가?
-
-셋 중 하나라도 확신이 서지 않으면 **무조건**:
-  hasUserAnnotation = false, userTime = null, userSpace = null, matches.time = false, matches.space = false.
-
-특히 다음 행동은 **절대 금지**입니다:
-- 주석이 없는 풀이에 대해 actualTime/actualSpace 를 userTime/userSpace 로 그대로 복제하기.
-- "이 코드라면 이런 주석이 있었을 법하다" 고 추정해서 userTime/userSpace 를 채우기.
-- JSDoc \`@param\`, \`@return\` 같은 파라미터 주석을 복잡도 주석으로 오인하기.
-- 함수 본문 안의 알고리즘 설명 주석(예: \`// 인접 리스트 생성\`) 을 복잡도 주석으로 오인하기.
-
-## 실측 패턴 예시
-
-### 예시 X1 — 원문 복사 + matches 엄격 (멀티 풀이)
-입력:
-L1: // tc: O(n^4)
-L2: const findMin_math = (nums) => Math.min(...nums);
-L3:
-L4: // tc: O(n^7)
-L5: const findMin_naive = (nums) => { /* 단순 순회 */ };
-L6:
-L7: // tc: O(n^2*logn)
-L8: const findMin = (nums) => { /* 이진 탐색 */ };
-
-올바른 출력 (요약):
-[
-  { name: "findMin_math",  userTime: "O(n^4)",      actualTime: "O(n)",     matches.time: false },
-  { name: "findMin_naive", userTime: "O(n^7)",      actualTime: "O(n)",     matches.time: false },
-  { name: "findMin",       userTime: "O(n^2*logn)", actualTime: "O(log n)", matches.time: false }
-]
-
-잘못된 출력 — **절대 이렇게 만들지 마세요**:
-- userTime: "O(n)" 처럼 actual 을 복사 → 원문 복사 원칙 위반 (F1).
-- matches.time: true 처럼 두 Big-O 가 다름에도 일치로 판정 → matches 엄격 판정 위반 (F2).
-
-### 예시 X2 — 주석 없음 (환각 금지)
-입력:
-L1: export class Solution {
-L2:   /**
-L3:    * @param {number} n
-L4:    * @param {number[][]} edges
-L5:    * @return {boolean}
-L6:    */
-L7:   validTree(n, edges) {
-L8:     // 인접 리스트 생성
-L9:     const adj = {};
-L10:    // ... DFS
-L11:  }
-L12: }
-
-해설:
-- L2–L6 은 JSDoc 파라미터/리턴 설명 → 복잡도 주석 아님.
-- L8, L10 은 알고리즘 단계 설명 → TC/SC 키워드도, Big-O 리터럴도 없음.
-- 따라서 이 파일에는 **유효한 복잡도 주석이 전혀 없음**.
-
-올바른 출력:
-{ name: "Solution.validTree", hasUserAnnotation: false, userTime: null, userSpace: null,
-  actualTime: "O(n+e)", actualSpace: "O(n+e)",
-  matches: { time: false, space: false } }
-
-잘못된 출력 — **절대 이렇게 만들지 마세요**:
-{ hasUserAnnotation: true, userTime: "O(n+e)", userSpace: "O(n+e)", matches: { time: true, space: true } }
-— 소스에 인용할 주석이 없는데 actual 을 복제한 환각 (F3). 절대 금지.
-
-### 예시 X3 — 키워드 없는 Big-O (부정 재확인)
-입력:
-L1: // 목표: O(n) 으로 줄이기
-L2: function twoSum(nums, target) { /* brute force */ }
-
-해설:
-- L1 에 \`O(n)\` 은 있지만, TC/SC/Time/Space/시간복잡도/공간복잡도/Complexity 키워드가 없음.
-- "목표/희망" 언급이지 측정치 아님.
-
-올바른 출력: hasUserAnnotation = false, userTime = null, userSpace = null.
-
-## 각 풀이에 대해 출력할 필드
-1. name: 함수명 또는 식별 가능한 이름 (예: "twoSum_bruteForce", "Solution.maxArea").
-2. description: 접근 방식 한 줄 설명 (예: "이진 탐색", "HashMap 활용").
-3. actualTime, actualSpace: 코드의 실제 시간/공간 복잡도를 Big-O 표기로 계산.
-4. hasUserAnnotation, userTime, userSpace: 위 "주석 귀속 규칙" + "유효한 복잡도 주석의 정의" + "원문 복사 원칙" + "인용 가능성 체크" 에 따라 채웁니다.
-   - 한쪽만 있으면 다른 쪽은 null.
-   - 인용 불가하면 무조건 null.
-5. matches.time / matches.space:
-   - hasUserAnnotation=false 면 둘 다 false.
-   - 사용자 값이 있는 항목만 actual 과 비교하여 일치 여부를 boolean 으로 반환.
-   - **matches 엄격 판정**:
-     - 서로 다른 Big-O 클래스는 **절대로** true 가 아닙니다. 크기만 비슷해 보여도 false.
-     - 정규화 후 문자열이 같아야만 true:
-       · 공백 무시: \`O(n log n)\` == \`O(nlogn)\`
-       · 거듭제곱 표기 통일: \`O(n^2)\` == \`O(n²)\` == \`O(n**2)\`
-       · 곱셈 기호: \`O(n*log n)\` == \`O(n log n)\`
-     - 다음은 **모두 false** (실수 하기 쉬운 예):
-       · \`O(n^2 * log n)\` vs \`O(log n)\` → false (n^2 항이 사라지지 않음)
-       · \`O(n^4)\` vs \`O(n)\`              → false
-       · \`O(n + m)\` vs \`O(n)\`            → false (m 항이 사라지지 않음)
-       · \`O(2^n)\` vs \`O(n^2)\`            → false (지수 vs 다항)
-     - 한쪽이 null 이면 그쪽 matches 는 무조건 false.
-6. feedback (한국어 1-3문장):
-   - 일치하면: 칭찬 + 핵심 근거 짧게.
-   - 불일치하면: 어디가 왜 다른지 설명 + "다시 분석해보시는 것을 권장드립니다" 톤.
-   - 주석이 없으면: 풀이 핵심 근거만 설명.
-7. suggestion (한국어, 항상 string):
-   - 의미 있는 한 단계 이상 개선 여지가 있을 때만 제안 (예: O(n^2) → O(n)).
-   - 문제 제약을 모를 수 있으므로 단정 금지. "고려해볼 만한 대안:" 톤.
-   - 개선 여지 없으면 "현재 구현이 적절해 보입니다."
-
-## 출력 직전 자가 점검 (각 solution 마다)
-아래 7개 질문에 모두 "예" 라고 답할 수 있을 때만 그 값을 유지합니다.
-
-1. 이 풀이가 실제 함수/메서드/클래스 선언에 대응하는가?
-2. userTime 이 null 이 아니라면, 그 문자열을 소스의 특정 라인에서 **문자 그대로** 인용 가능한가?
-3. userSpace 에 대해서도 (2) 가 성립하는가?
-4. userTime/userSpace 중 어느 하나라도 값이 있다면 hasUserAnnotation=true 인가?
-   (둘 다 null 이면 hasUserAnnotation=false 여야 함)
-5. matches.time=true 라면 normalize(userTime) === normalize(actualTime) 인가?
-6. matches.space=true 라면 normalize(userSpace) === normalize(actualSpace) 인가?
-7. 이 풀이의 userTime/userSpace 가 **다른 풀이의 주석**에서 온 것이 아닌가?
-   (헤더 바로 위 영역에서만 가져왔는지 재확인)
-
-하나라도 "아니오" 라면 해당 필드를 바로잡으세요. 의심스러우면 null / false 로 둡니다.
-
-반드시 아래 JSON 스키마로만 응답:
 {
   "files": [
     {
-      "problemName": string,
+      "problemName": "string",
       "solutions": [
         {
-          "name": string,
-          "description": string,
-          "hasUserAnnotation": boolean,
-          "userTime": string|null,
-          "userSpace": string|null,
-          "actualTime": string,
-          "actualSpace": string,
-          "matches": { "time": boolean, "space": boolean },
-          "feedback": string,
-          "suggestion": string
+          "name": "string",
+          "headerLine": integer,
+          "description": "string",
+          "actualTime": "string",
+          "actualSpace": "string",
+          "feedback": "string",
+          "suggestion": "string"
         }
       ]
     }
@@ -237,36 +206,41 @@ function addLineNumbers(content) {
     .join("\n");
 }
 
-const BIG_O_PATTERN = /[OΘΩoω]\s*\(/;
-
-function normalizeSolution(s) {
-  const userTime =
-    typeof s.userTime === "string" && BIG_O_PATTERN.test(s.userTime)
-      ? s.userTime
-      : null;
-  const userSpace =
-    typeof s.userSpace === "string" && BIG_O_PATTERN.test(s.userSpace)
-      ? s.userSpace
-      : null;
+export function composeSolution(modelSol, originalContent) {
+  const headerLine = Number.isInteger(modelSol?.headerLine)
+    ? modelSol.headerLine
+    : null;
+  const { userTime, userSpace } =
+    headerLine !== null
+      ? extractUserAnnotations(originalContent, headerLine)
+      : { userTime: null, userSpace: null };
 
   const hasUserAnnotation = userTime !== null || userSpace !== null;
+  const actualTime =
+    typeof modelSol?.actualTime === "string"
+      ? cleanBigO(modelSol.actualTime)
+      : "?";
+  const actualSpace =
+    typeof modelSol?.actualSpace === "string"
+      ? cleanBigO(modelSol.actualSpace)
+      : "?";
 
   return {
-    name: typeof s.name === "string" ? s.name : "unknown",
-    description: typeof s.description === "string" ? s.description : "",
+    name: typeof modelSol?.name === "string" ? modelSol.name : "unknown",
+    description:
+      typeof modelSol?.description === "string" ? modelSol.description : "",
     hasUserAnnotation,
     userTime,
     userSpace,
-    actualTime: typeof s.actualTime === "string" ? s.actualTime : "?",
-    actualSpace: typeof s.actualSpace === "string" ? s.actualSpace : "?",
+    actualTime,
+    actualSpace,
     matches: {
-      time:
-        hasUserAnnotation && userTime !== null && s.matches?.time === true,
-      space:
-        hasUserAnnotation && userSpace !== null && s.matches?.space === true,
+      time: userTime !== null && bigOEquals(userTime, actualTime),
+      space: userSpace !== null && bigOEquals(userSpace, actualSpace),
     },
-    feedback: typeof s.feedback === "string" ? s.feedback : "",
-    suggestion: typeof s.suggestion === "string" ? s.suggestion : "",
+    feedback: typeof modelSol?.feedback === "string" ? modelSol.feedback : "",
+    suggestion:
+      typeof modelSol?.suggestion === "string" ? modelSol.suggestion : "",
   };
 }
 
@@ -274,7 +248,7 @@ async function callComplexityAnalysis(fileEntries, apiKey) {
   const userPrompt = fileEntries
     .map(
       (f) =>
-        `${FILE_DELIMITER} ${f.problemName} ${FILE_DELIMITER}\n\`\`\`\n${addLineNumbers(f.content)}\n\`\`\``
+        `${FILE_DELIMITER} ${f.problemName} ${FILE_DELIMITER}\n\`\`\`\n${addLineNumbers(stripComplexityComments(f.content))}\n\`\`\``
     )
     .join("\n\n");
 
@@ -314,13 +288,23 @@ async function callComplexityAnalysis(fileEntries, apiKey) {
 
   const files = Array.isArray(parsed.files) ? parsed.files : [];
 
-  return files.map((file) => ({
-    problemName:
-      typeof file.problemName === "string" ? file.problemName : "unknown",
-    solutions: (Array.isArray(file.solutions) ? file.solutions : []).map(
-      normalizeSolution
-    ),
-  }));
+  return files.map((file, fileIdx) => {
+    const modelName =
+      typeof file.problemName === "string" ? file.problemName : "unknown";
+    // 모델이 problemName 을 줄여 쓰는 버그 (예: longest-... → long-...) 가 있으므로
+    // 정확 일치가 없으면 인덱스로 폴백한다 (LLM 이 입력 순서를 보존한다는 가정).
+    const original =
+      fileEntries.find((f) => f.problemName === modelName) ??
+      fileEntries[fileIdx];
+    const problemName = original?.problemName ?? modelName;
+    const originalContent = original?.content ?? "";
+    return {
+      problemName,
+      solutions: (Array.isArray(file.solutions) ? file.solutions : []).map(
+        (s) => composeSolution(s, originalContent)
+      ),
+    };
+  });
 }
 
 // ── 댓글 포맷터 ──────────────────────────────────
