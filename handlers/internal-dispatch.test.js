@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "bun:test";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../utils/github.js", () => ({
   generateGitHubAppToken: vi.fn().mockResolvedValue("fake-token"),

@@ -28,32 +28,35 @@ Fork PR에서도 작동하도록 GitHub Projects v2의 Week 필드를 조회하�
 
 ```
 ~/work/github/
-├── index.js           # Worker 메인 코드 (엔드포인트 라우팅)
-├── wrangler.jsonc     # Cloudflare Workers 설정
-├── .env               # 로컬 환경 변수 (커밋 제외)
-├── .gitignore         # Git 제외 파일
-├── handlers/          # 기능별 핸들러
-│   ├── check-weeks.js # PR Week 설정 검사 (수동 호출용)
-│   └── webhooks.js    # GitHub webhook 이벤트 처리
-├── utils/             # 공통 유틸리티
-│   ├── cors.js        # CORS 헤더 및 응답 유틸리티
-│   ├── github.js      # GitHub 인증 및 API 유틸리티
-│   └── webhook.js     # Webhook signature 검증
-├── README.md          # 프로젝트 설명
-├── DEPLOYMENT.md      # 배포 가이드
-├── AGENTS.md          # 이 파일 (AI 에이전트 가이드)
-├── CLAUDE.md          # Claude Code 참조 파일 (AGENTS.md로 리다이렉트)
-└── *.pem              # GitHub App Private Keys (커밋 제외)
+├── index.js              # Worker 메인 코드 (엔드포인트 라우팅)
+├── wrangler.jsonc        # Cloudflare Workers 설정과 vars
+├── package.json          # Vitest 테스트 스크립트 및 devDependencies
+├── bun.lock              # Bun 의존성 lockfile
+├── vitest.config.js      # Cloudflare Workers Vitest integration 설정
+├── .github/workflows/    # CI 워크플로우 (bun install → bun run test)
+├── handlers/             # 기능별 핸들러와 핸들러 단위 테스트
+├── utils/                # 공통 유틸리티와 유틸리티 단위 테스트
+├── tests/                # Worker runtime smoke test와 교차 모듈 테스트
+├── README.md             # 프로젝트 설명
+├── AGENTS.md             # 이 파일 (AI 에이전트 가이드)
+├── CLAUDE.md             # Claude Code 참조 파일 (AGENTS.md로 리다이렉트)
+└── *.pem                 # GitHub App Private Keys (커밋 제외)
 ```
 
 ### 코드 구조 설명
 
-- **index.js (32줄)**: 엔드포인트 라우팅만 담당. pathname별 핸들러 호출
-- **handlers/**: 기능별 핸들러
+- **index.js**: 엔드포인트 라우팅만 담당. pathname별 핸들러 호출
+- **handlers/**: 기능별 핸들러와 `*.test.js` 핸들러 단위 테스트
   - `check-weeks.js`: PR Week 설정 검사, 댓글 작성/삭제
-- **utils/**: 여러 핸들러에서 공통으로 사용하는 유틸리티
+  - `webhooks.js`: GitHub webhook 이벤트 처리
+  - `internal-dispatch.js`: self-fetch 내부 AI 핸들러 디스패치
+  - `approve_prs.js`, `merge_prs.js`: PR 일괄 승인/병합
+- **utils/**: 여러 핸들러에서 공통으로 사용하는 유틸리티와 `*.test.js` 유틸리티 단위 테스트
   - `cors.js`: CORS 헤더 관리 및 응답 생성 (`corsResponse`, `errorResponse`)
   - `github.js`: GitHub App 인증 (JWT, Installation Token), RSA 서명
+  - `webhook.js`: Webhook signature 검증
+- **tests/**: Worker runtime smoke test, subrequest budget, cross-module 테스트
+- **vitest.config.js**: `@cloudflare/vitest-pool-workers`가 `wrangler.jsonc`를 읽도록 설정
 
 ### 새 기능 추가 시
 
@@ -390,21 +393,24 @@ curl -X POST https://github.dalestudy.com/check-weeks \
 
 ## 테스트
 
-이 프로젝트는 [Bun](https://bun.sh)의 내장 테스트 러너를 사용합니다. 별도의 `package.json`이나 의존성 설치 없이 테스트를 작성하고 실행할 수 있습니다.
+이 프로젝트는 Cloudflare Workers Vitest integration을 사용합니다. Vitest로 테스트를 실행하고, Worker 런타임과 바인딩이 필요한 테스트는 Cloudflare 테스트 도구를 사용합니다.
 
 ### 테스트 실행
 
-테스트는 `handlers/`(핸들러별 단위 테스트)와 `tests/`(프로세스 격리가 필요한 테스트)로 나뉘어 있다. Bun의 `vi.mock()`은 프로세스 전역 레지스트리에 등록되어 같은 실행 내에서 다른 파일로 누출되므로, 같은 모듈을 모킹하는 테스트와 실제 구현을 호출하는 테스트는 **별도 `bun test` 프로세스로 실행**해야 한다.
+테스트는 `handlers/`(핸들러 단위 테스트), `utils/`(유틸리티 단위 테스트), `tests/`(Worker runtime smoke test와 교차 모듈 테스트)로 나뉜다. 모듈 모킹은 Vitest의 `vi.mock()`을 사용하고, Worker runtime과 bindings가 필요한 테스트는 `cloudflare:test`와 `cloudflare:workers`를 사용한다.
 
 ```bash
-# 전체 테스트 실행 (두 디렉토리를 별도 프로세스로)
-bun test handlers/ && bun test tests/
+# 의존성 설치
+bun install
+
+# 전체 테스트 실행
+bun run test
+
+# 감시 모드
+bun run test:watch
 
 # 특정 파일만 실행
-bun test handlers/webhooks.test.js
-
-# 감시 모드 (파일 변경 시 자동 재실행)
-bun test handlers/ --watch
+bun run test -- handlers/webhooks.test.js
 ```
 
 Bun 설치: https://bun.sh/docs/installation
@@ -413,11 +419,11 @@ Bun 설치: https://bun.sh/docs/installation
 
 - 테스트 파일은 대상 파일과 같은 디렉토리에 `*.test.js` 이름으로 배치합니다.
   - 예: `handlers/webhooks.js` → `handlers/webhooks.test.js`
-- `bun:test`에서 제공하는 API(`describe`, `it`, `expect`, `vi`)를 사용합니다.
+- `vitest`에서 제공하는 API(`describe`, `it`, `expect`, `vi`, `beforeEach`)를 사용합니다.
 - 외부 의존성(`utils/github.js` 등)은 `vi.mock()`으로 대체하고, `fetch`는 `globalThis.fetch = vi.fn()...`로 스텁합니다.
 
 ```javascript
-import { describe, it, expect, vi, beforeEach } from "bun:test";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../utils/github.js", () => ({
   generateGitHubAppToken: vi.fn().mockResolvedValue("fake-token"),
@@ -449,7 +455,7 @@ describe("checkWeeks", () => {
 
 ### CI 자동 실행
 
-`.github/workflows/integration.yaml`이 모든 Pull Request와 `main` 브랜치 푸시에서 `bun test handlers/`와 `bun test tests/`를 각각 별도 스텝으로 자동 실행합니다. 테스트가 실패하면 PR 체크가 실패하므로, 머지 전에 반드시 통과시켜야 합니다.
+`.github/workflows/integration.yaml`이 모든 Pull Request와 `main` 브랜치 푸시에서 `bun install` 다음 `bun run test`를 자동 실행합니다. 테스트가 실패하면 PR 체크가 실패하므로, 머지 전에 반드시 통과시켜야 합니다.
 
 ## 새 기능 추가 가이드
 
@@ -458,7 +464,7 @@ describe("checkWeeks", () => {
 1. **엔드포인트 추가**: `index.js`의 `fetch()` 함수에 새로운 pathname 라우팅 추가
 2. **핸들러 함수 작성**: 비즈니스 로직을 별도 함수로 분리 (예: `handleCheckAllPrs`)
 3. **GitHub App 권한 확인**: 필요한 권한이 있는지 확인하고 없으면 추가
-4. **테스트 작성**: 핸들러 옆에 `*.test.js`를 추가하고 `bun test`로 통과 확인 (위 "테스트" 섹션 참고)
+4. **테스트 작성**: 핸들러 옆에 `*.test.js`를 추가하고 `bun run test`로 통과 확인 (위 "테스트" 섹션 참고)
 5. **문서 업데이트**: AGENTS.md, README.md에 새 기능 문서화
 6. **로컬 실행 테스트**: `wrangler dev`로 실제 엔드포인트 동작 확인 후 배포
 

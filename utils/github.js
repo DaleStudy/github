@@ -4,6 +4,65 @@
 
 import { GITHUB_USER_AGENT, GITHUB_ACCEPT_HEADER } from "./constants.js";
 
+function encodeDerLength(length) {
+  if (length < 0x80) {
+    return Uint8Array.of(length);
+  }
+
+  const octets = [];
+  let value = length;
+  while (value > 0) {
+    octets.unshift(value & 0xff);
+    value >>= 8;
+  }
+
+  return Uint8Array.of(0x80 | octets.length, ...octets);
+}
+
+function encodeDer(tag, value) {
+  return Uint8Array.of(tag, ...encodeDerLength(value.length), ...value);
+}
+
+function concatUint8Arrays(...arrays) {
+  const totalLength = arrays.reduce((sum, array) => sum + array.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+
+  for (const array of arrays) {
+    result.set(array, offset);
+    offset += array.length;
+  }
+
+  return result;
+}
+
+function wrapPkcs1PrivateKey(pkcs1Der) {
+  const version = Uint8Array.of(0x02, 0x01, 0x00);
+  const algorithmIdentifier = Uint8Array.of(
+    0x30,
+    0x0d,
+    0x06,
+    0x09,
+    0x2a,
+    0x86,
+    0x48,
+    0x86,
+    0xf7,
+    0x0d,
+    0x01,
+    0x01,
+    0x01,
+    0x05,
+    0x00
+  );
+  const privateKey = encodeDer(0x04, pkcs1Der);
+
+  return encodeDer(
+    0x30,
+    concatUint8Arrays(version, algorithmIdentifier, privateKey)
+  );
+}
+
 /**
  * GitHub API 요청 헤더 생성
  */
@@ -115,7 +174,7 @@ export async function generateGitHubAppToken(env) {
 /**
  * JWT 생성 (RS256)
  */
-async function createJWT(appId, privateKeyPem) {
+export async function createJWT(appId, privateKeyPem) {
   const now = Math.floor(Date.now() / 1000);
 
   const header = {
@@ -144,7 +203,7 @@ async function createJWT(appId, privateKeyPem) {
 /**
  * Private Key import
  */
-async function importPrivateKey(pem) {
+export async function importPrivateKey(pem) {
   // PKCS8 또는 PKCS1 형식 지원
   const isPKCS8 = pem.includes("BEGIN PRIVATE KEY");
   const pemHeader = isPKCS8
@@ -159,7 +218,11 @@ async function importPrivateKey(pem) {
     .replace(pemFooter, "")
     .replace(/\s/g, "");
 
-  const binaryDer = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
+  let binaryDer = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
+
+  if (!isPKCS8) {
+    binaryDer = wrapPkcs1PrivateKey(binaryDer);
+  }
 
   return await crypto.subtle.importKey(
     "pkcs8",
@@ -176,7 +239,7 @@ async function importPrivateKey(pem) {
 /**
  * Sign with RS256
  */
-async function sign(data, key) {
+export async function sign(data, key) {
   const signature = await crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
     key,
@@ -189,7 +252,7 @@ async function sign(data, key) {
 /**
  * Base64 URL encode
  */
-function base64UrlEncode(data) {
+export function base64UrlEncode(data) {
   if (typeof data === "string") {
     data = new TextEncoder().encode(data);
   }
