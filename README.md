@@ -176,30 +176,33 @@ curl -X POST http://localhost:8787/check-weeks \
 
 ### 테스트 코드 실행
 
-이 프로젝트는 **[Bun](https://bun.sh)의 내장 테스트 러너**를 사용합니다. `package.json`이나 `node_modules`가 없는 이유는 Bun이 런타임·테스트 러너·모킹 API(`vi.mock`, `vi.fn`)를 모두 내장하고 있어서 별도 설치 없이 바로 실행되기 때문입니다.
+이 프로젝트는 **Cloudflare Workers Vitest integration**을 사용합니다. 테스트는 Vitest로 실행하고, Worker 런타임과 바인딩이 필요한 테스트는 Cloudflare 테스트 도구를 사용합니다.
 
 ```bash
-# Bun 설치 (최초 1회) — https://bun.sh/docs/installation
-curl -fsSL https://bun.sh/install | bash
+# 의존성 설치
+bun install
 
-# 전체 테스트 실행 (두 디렉토리를 별도 프로세스로)
-bun test handlers/ && bun test tests/
+# 전체 테스트 실행
+bun run test
+
+# 감시 모드
+bun run test:watch
 
 # 특정 파일만 실행
-bun test handlers/webhooks.test.js
-
-# 감시 모드 (파일 변경 시 자동 재실행)
-bun test handlers/ --watch
+bun run test -- handlers/webhooks.test.js
 ```
 
-테스트는 두 디렉토리로 나뉘어 있습니다:
+테스트는 세 디렉토리로 나뉘어 있습니다:
 
-- `handlers/*.test.js`: 대상 파일 옆에 두는 단위 테스트
-- `tests/*.test.js`: Bun `vi.mock()`의 전역 레지스트리 누출을 피하기 위해 별도 프로세스로 실행하는 테스트 (예: `subrequest-budget.test.js`)
+- `handlers/*.test.js`: 핸들러 단위 테스트
+- `utils/*.test.js`: 유틸리티 단위 테스트
+- `tests/*.test.js`: Worker runtime smoke test와 교차 모듈 테스트
+
+모듈 모킹은 Vitest의 `vi.mock()`을 사용합니다. Worker runtime과 bindings가 필요한 테스트는 `cloudflare:test`와 `cloudflare:workers`를 사용합니다.
 
 자세한 작성 규칙과 예제는 `AGENTS.md`의 "테스트" 섹션을 참고하세요.
 
-모든 Pull Request와 `main` 브랜치 푸시에서 `.github/workflows/integration.yaml`이 두 디렉토리의 테스트를 자동 실행합니다.
+모든 Pull Request와 `main` 브랜치 푸시에서 `.github/workflows/integration.yaml`이 `bun install` 다음 `bun run test`를 실행합니다.
 
 ### 프로덕션 엔드포인트 호출
 

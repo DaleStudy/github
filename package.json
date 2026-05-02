@@ -1,0 +1,13 @@
+{
+  "name": "dalestudy-github-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.15.2",
+    "vitest": "^4.1.0"
+  }
+}

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "bun:test";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { tagPatterns } from "../handlers/tag-patterns.js";
 import { postLearningStatus } from "../handlers/learning-status.js";
