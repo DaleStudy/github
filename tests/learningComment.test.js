@@ -49,7 +49,7 @@ describe("upsertLearningStatusComment — usage history accumulation", () => {
     expect(post).toBeDefined();
 
     const body = parseBody(post);
-    expect(body).toContain("🔢 API 사용량 (gpt-4.1-nano)");
+    expect(body).toContain("🔢 API 사용량 (gpt-5-nano)");
     expect(body).toContain("| 1 | 100 | 50 | 150 |");
     // single-row history => no totals row
     expect(body).not.toContain("**합계**");

@@ -37,7 +37,11 @@ PR의 코드 변경 사항을 참고하여 사용자의 질문에 명확하고 �
 
 단순히 지적만 하지 말고, 격려와 학습이 되는 피드백을 함께 주세요.
 해당 사항없는 항목은 생략하고 자연스럽게 작성하세요.
-500 글자를 초과하지 말아주세요.
+
+[작성 규칙 — 반드시 지킬 것]
+- 전체 응답은 한국어 기준 500자 이내. 절대 초과하지 마세요. 분량이 넘칠 것 같으면 가장 중요한 피드백만 남기고 나머지는 생략하세요.
+- 한국어로만 작성하세요. 중국어·일본어 한자나 다른 언어를 섞지 마세요(예: "一致" 금지, "일치" 사용).
+- 항목은 3개 이내로 압축하고, 장황한 설명 없이 핵심만 간결하게 쓰세요.
 `;
 
   let userPrompt = `# PR Title
@@ -65,13 +69,13 @@ ${prDiff}
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4.1-nano",
+      model: "gpt-5-nano",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      max_tokens: 2000,
-      temperature: 0.7,
+      max_completion_tokens: 3000,
+      reasoning_effort: "minimal",
     }),
   });
 
@@ -143,14 +147,14 @@ ${fileContent}
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4.1-nano",
+      model: "gpt-5-nano",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 500,
-      temperature: 0.3,
+      max_completion_tokens: 2000,
+      reasoning_effort: "minimal",
     }),
   });
 
@@ -221,14 +225,14 @@ ${truncatedContent}
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4.1-nano",
+      model: "gpt-5-nano",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 200,
-      temperature: 0.2,
+      max_completion_tokens: 1500,
+      reasoning_effort: "minimal",
     }),
   });
 
