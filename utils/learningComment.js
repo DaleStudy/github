@@ -20,8 +20,8 @@ const COMMENT_MARKER = "<!-- dalestudy-learning-status -->";
  */
 const USAGE_DATA_RE = /<!-- usage-data: (\[.*?\]) -->/;
 
-/** gpt-4.1-nano pricing (USD per token) */
-const INPUT_COST_PER_TOKEN = 0.10 / 1_000_000;
+/** gpt-5-nano pricing (USD per token) */
+const INPUT_COST_PER_TOKEN = 0.05 / 1_000_000;
 const OUTPUT_COST_PER_TOKEN = 0.40 / 1_000_000;
 
 /**
@@ -72,7 +72,7 @@ function parseUsageFromComment(body) {
 function formatUsageSection(history) {
   const lines = [];
   lines.push("<details>");
-  lines.push("<summary>🔢 API 사용량 (gpt-4.1-nano)</summary>");
+  lines.push("<summary>🔢 API 사용량 (gpt-5-nano)</summary>");
   lines.push("");
   lines.push("| 요청 | 입력 토큰 | 출력 토큰 | 합계 | 비용 |");
   lines.push("|---:|---:|---:|---:|---:|");

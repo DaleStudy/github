@@ -255,14 +255,14 @@ export async function callComplexityAnalysis(fileEntries, apiKey) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4.1-nano",
+      model: "gpt-5-nano",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 4000,
-      temperature: 0.2,
+      max_completion_tokens: 5000,
+      reasoning_effort: "minimal",
     }),
   });
 

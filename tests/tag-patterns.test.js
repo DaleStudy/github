@@ -65,7 +65,7 @@ function makePrData(overrides = {}) {
 
 /**
  * 두 OpenAI 엔드포인트(패턴 분석 N콜 + 복잡도 분석 1콜)를 분기한다.
- * 복잡도 호출은 system_prompt 에 "복잡도" 가 포함되거나 max_tokens >= 1000 으로 식별.
+ * 복잡도 호출은 system_prompt 에 "시간/공간 복잡도를 분석" 이 포함되는지로 식별.
  */
 function makeFetchMock({
   solutionFiles,
