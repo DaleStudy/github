@@ -28,7 +28,7 @@ export async function mergePrs(request, env) {
     }
 
     const { repoOwner, repoName, week, excludes, rawPayload } = payload.data;
-    const mergeMethod = (rawPayload.merge_method || "merge").toLowerCase();
+    const mergeMethod = (rawPayload.merge_method || "squash").toLowerCase();
 
     if (!ALLOWED_MERGE_METHODS.has(mergeMethod)) {
       return errorResponse(
@@ -150,88 +150,31 @@ export async function mergePrs(request, env) {
 }
 
 async function mergePullRequest(owner, repo, prNumber, mergeMethod, token, sha) {
-  // 1. PR의 GraphQL node ID 조회
-  const nodeId = await getPullRequestNodeId(owner, repo, prNumber, token);
-  if (!nodeId) {
-    return {
-      merged: false,
-      error: "Failed to get PR node ID",
-    };
-  }
-
-  // 2. Merge method 매핑 (REST → GraphQL)
-  const graphqlMergeMethod = {
-    merge: "MERGE",
-    squash: "SQUASH",
-    rebase: "REBASE",
-  }[mergeMethod] || "MERGE";
-
-  // 3. Auto-merge 활성화 (Merge Queue 사용)
-  const mutation = `
-    mutation {
-      enablePullRequestAutoMerge(input: {
-        pullRequestId: "${nodeId}"
-        mergeMethod: ${graphqlMergeMethod}
-      }) {
-        pullRequest {
-          id
-          number
-          autoMergeRequest {
-            enabledAt
-            mergeMethod
-          }
-        }
-      }
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/merge`,
+    {
+      method: "PUT",
+      headers: {
+        ...getGitHubHeaders(token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ merge_method: mergeMethod, sha }),
     }
-  `;
-
-  const response = await fetch("https://api.github.com/graphql", {
-    method: "POST",
-    headers: {
-      ...getGitHubHeaders(token),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query: mutation }),
-  });
+  );
 
   const result = await safeJson(response);
 
-  if (response.ok && result.data?.enablePullRequestAutoMerge?.pullRequest) {
+  if (response.ok && result.merged) {
     return {
       merged: true,
-      autoMergeEnabled: true,
-      sha: sha,
+      sha: result.sha,
     };
   }
 
   return {
     merged: false,
-    error: result.errors?.[0]?.message || "Auto-merge failed",
+    error: result.message || "Merge failed",
   };
-}
-
-async function getPullRequestNodeId(owner, repo, prNumber, token) {
-  const query = `
-    query {
-      repository(owner: "${owner}", name: "${repo}") {
-        pullRequest(number: ${prNumber}) {
-          id
-        }
-      }
-    }
-  `;
-
-  const response = await fetch("https://api.github.com/graphql", {
-    method: "POST",
-    headers: {
-      ...getGitHubHeaders(token),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query }),
-  });
-
-  const result = await safeJson(response);
-  return result.data?.repository?.pullRequest?.id || null;
 }
 
 async function getMergeableState(owner, repo, prNumber, token) {
