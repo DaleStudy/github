@@ -208,7 +208,7 @@ GitHub Organization webhook 수신용 엔드포인트
 
 #### `POST /merge-prs`
 
-열려있는 PR을 일괄 병합합니다. 기본 병합 방식은 `merge`이며 `merge_method` 값으로 `merge | squash | rebase` 중 선택할 수 있습니다. `excludes`로 특정 PR을 제외할 수 있습니다. 승인 리뷰가 없거나 `maintenance` 라벨이 붙은 PR, Draft PR, GitHub `mergeable_state !== "clean"` PR은 스킵되며 `unknown`/`behind` 상태는 최대 1초 후 한 번 더 확인합니다.
+열려있는 PR을 일괄 병합합니다. 기본 병합 방식은 `squash`이며 `merge_method` 값으로 `merge | squash | rebase` 중 선택할 수 있습니다. `excludes`로 특정 PR을 제외할 수 있습니다. 승인 리뷰가 없거나 `maintenance` 라벨이 붙은 PR, Draft PR, GitHub `mergeable_state !== "clean"` PR은 스킵되며 `unknown`/`behind` 상태는 최대 1초 후 한 번 더 확인합니다.
 
 **Request:**
 

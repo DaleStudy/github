@@ -129,7 +129,7 @@ https://github.dalestudy.com
 
 ### `POST /merge-prs`
 
-열려있는 PR을 일괄 병합합니다. 기본 병합 방식은 `merge`이며, `merge_method`로 `merge | squash | rebase` 중 선택할 수 있습니다. `excludes` 배열로 특정 PR을 제외할 수 있습니다. 최소 1개의 승인 리뷰가 없거나 Draft/`maintenance` 라벨이 붙은 PR은 스킵되며, GitHub에서 `mergeable_state === "clean"`인 PR만 병합됩니다(`behind`, `dirty`, `unknown` 등은 스킵). `unknown`/`behind` 상태는 최대 1초 후 한 차례 재확인합니다.
+열려있는 PR을 일괄 병합합니다. 기본 병합 방식은 `squash`이며, `merge_method`로 `merge | squash | rebase` 중 선택할 수 있습니다. `excludes` 배열로 특정 PR을 제외할 수 있습니다. 최소 1개의 승인 리뷰가 없거나 Draft/`maintenance` 라벨이 붙은 PR은 스킵되며, GitHub에서 `mergeable_state === "clean"`인 PR만 병합됩니다(`behind`, `dirty`, `unknown` 등은 스킵). `unknown`/`behind` 상태는 최대 1초 후 한 차례 재확인합니다.
 
 **Request:**
 
