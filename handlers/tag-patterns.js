@@ -5,10 +5,10 @@
  * 파일별 review comment로 남긴다. 복잡도 분석은 패턴 분석 루프와 병렬로
  * OpenAI 1콜에서 모든 파일을 한 번에 처리하고, 그 결과를 파일별 댓글
  * 본문에 한 섹션 더 붙이는 형태로 묻어간다.
+ * 재실행 시 기존 패턴 댓글과 답글은 보존하고, 변경된 파일에 새 분석 댓글을 추가한다.
  *
- * 주의: 솔루션 파일이 12개를 넘으면 subrequest 한도(50)에 가까워진다.
- *       기존 패턴 태깅 자체도 13파일 이상에서 한도를 넘는 cliff 가 있으니
- *       복잡도 합본은 그 cliff 를 1파일분(13→12) 당기는 정도다.
+ * 주의: Workers Free 플랜의 외부 subrequest 한도는 invocation당 50회이므로 준수해야 한다.
+ * @see https://developers.cloudflare.com/workers/platform/limits/#subrequests
  */
 
 import { getGitHubHeaders } from "../utils/github.js";
@@ -95,23 +95,17 @@ export async function tagPatterns(
     return { skipped: "no-solution-files" };
   }
 
-  // 2-3. 기존 Bot 패턴 태그 코멘트 삭제 (변경 파일만)
-  const targetFilenames = solutionFiles.map((f) => f.filename);
-  await deletePreviousPatternComments(
-    repoOwner, repoName, prNumber, appToken, targetFilenames
-  );
-
-  // 2-4. 모든 파일 raw 다운로드 (한 번만, 복잡도 분석과 공유)
+  // 2-3. 모든 파일 raw 다운로드 (한 번만, 복잡도 분석과 공유)
   const fileEntries = await downloadFileEntries(solutionFiles);
 
-  // 2-5. 복잡도 분석은 1콜이므로 패턴 루프와 병렬 진행. 실패해도 패턴 댓글은 작성.
+  // 2-4. 복잡도 분석은 1콜이므로 패턴 루프와 병렬 진행. 실패해도 패턴 댓글은 작성.
   const complexityPromise = callComplexityAnalysis(fileEntries, openaiApiKey)
     .catch((err) => {
       console.error(`[tagPatterns] complexity analysis failed: ${err.message}`);
       return [];
     });
 
-  // 2-6. 파일별 OpenAI 분석 + 코멘트 작성 (각 파일 try/catch 래핑)
+  // 2-5. 파일별 OpenAI 분석 + 코멘트 작성 (각 파일 try/catch 래핑)
   const results = [];
   for (const fe of fileEntries) {
     try {
@@ -134,72 +128,12 @@ export async function tagPatterns(
     }
   }
 
-  // 2-7. 마이그레이션: 구버전이 남긴 단독 복잡도 issue comment 가 있으면 삭제
+  // 2-6. 마이그레이션: 구버전이 남긴 단독 복잡도 issue comment 가 있으면 삭제
   await deleteLegacyComplexityIssueComment(
     repoOwner, repoName, prNumber, appToken
   );
 
   return { tagged: results.filter((r) => !r.error).length, results };
-}
-
-/**
- * 기존 Bot 패턴 태그 코멘트 삭제 (대상 파일만, 다른 사용자 코멘트는 절대 건드리지 않음)
- *
- * @param {string[]} targetFilenames - 삭제 대상 파일명 목록
- */
-async function deletePreviousPatternComments(
-  repoOwner,
-  repoName,
-  prNumber,
-  appToken,
-  targetFilenames
-) {
-  const response = await fetch(
-    `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/comments?per_page=100`,
-    { headers: getGitHubHeaders(appToken) }
-  );
-
-  if (!response.ok) {
-    console.error(
-      `[tagPatterns] Failed to fetch review comments: ${response.status}`
-    );
-    return;
-  }
-
-  const comments = await response.json();
-  const targetSet = new Set(targetFilenames);
-  const botPatternComments = comments.filter(
-    (c) =>
-      c.user?.type === "Bot" &&
-      c.body?.includes(COMMENT_MARKER) &&
-      targetSet.has(c.path)
-  );
-
-  for (const comment of botPatternComments) {
-    try {
-      const deleteResponse = await fetch(
-        `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/comments/${comment.id}`,
-        {
-          method: "DELETE",
-          headers: getGitHubHeaders(appToken),
-        }
-      );
-
-      if (!deleteResponse.ok) {
-        console.error(
-          `[tagPatterns] Failed to delete comment ${comment.id}: ${deleteResponse.status}`
-        );
-      }
-    } catch (error) {
-      console.error(
-        `[tagPatterns] Error deleting comment ${comment.id}: ${error.message}`
-      );
-    }
-  }
-
-  console.log(
-    `[tagPatterns] Deleted ${botPatternComments.length} previous pattern comments for ${targetFilenames.length} files`
-  );
 }
 
 /**
@@ -232,6 +166,8 @@ async function tagSingleFile(
     analysis.patterns.length > 0 ? analysis.patterns.join(", ") : "감지된 패턴 없음";
   let body = `${COMMENT_MARKER}
 ### 🏷️ 알고리즘 패턴 분석
+
+${renderAnalyzedSource(file.filename, fileContent)}
 
 - **패턴**: ${patternsText}
 - **설명**: ${analysis.description || "(설명 없음)"}`;
@@ -271,6 +207,20 @@ async function tagSingleFile(
   }
 
   return { patterns: analysis.patterns };
+}
+
+function renderAnalyzedSource(filename, content) {
+  const language = filename.includes(".") ? filename.split(".").pop() : "";
+  const truncated = content.length >= MAX_FILE_SIZE ? "\n... (이하 생략)" : "";
+
+  return `<details>
+<summary>${filename}</summary>
+
+\`\`\`${language}
+${content}${truncated}
+\`\`\`
+
+</details>`;
 }
 
 /**

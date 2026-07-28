@@ -51,10 +51,14 @@ function failResponse(status = 500) {
   });
 }
 
-function makeSolutionFile(problemName, username = "testuser") {
+function makeSolutionFile(
+  problemName,
+  username = "testuser",
+  status = "added"
+) {
   return {
     filename: `${problemName}/${username}.js`,
-    status: "added",
+    status,
     raw_url: `https://raw.example.com/${problemName}/${username}.js`,
   };
 }
@@ -73,7 +77,6 @@ function makeFetchMock({
   patternResponse = { patterns: ["Two Pointers"], description: "test" },
   complexityFiles = null,
   complexityFails = false,
-  existingPatternComments = [],
   existingIssueComments = [],
   postCapture = null,
 } = {}) {
@@ -108,14 +111,6 @@ function makeFetchMock({
           { message: { content: JSON.stringify(patternResponse) } },
         ],
       });
-    }
-
-    if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "GET") {
-      return okJson(existingPatternComments);
-    }
-
-    if (urlStr.includes("/pulls/comments/") && method === "DELETE") {
-      return okJson({});
     }
 
     if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "POST") {
@@ -226,6 +221,31 @@ describe("tagPatterns — 합본 댓글 (패턴 + 복잡도)", () => {
     expect(posts[0].body).toContain("정확합니다!");
     // 합본 댓글에는 LEGACY_COMPLEXITY_MARKER 가 들어가지 않는다
     expect(posts[0].body).not.toContain(LEGACY_COMPLEXITY_MARKER);
+  });
+
+  it("분석 대상 코드를 첨부한다", async () => {
+    const posts = [];
+    globalThis.fetch = makeFetchMock({
+      solutionFiles: [makeSolutionFile("two-sum")],
+      postCapture: posts,
+    });
+
+    await tagPatterns(
+      REPO_OWNER, REPO_NAME, PR_NUMBER, HEAD_SHA,
+      makePrData(),
+      APP_TOKEN, OPENAI_KEY
+    );
+
+    const body = posts[0].body;
+
+    expect(body).toContain(`<details>
+<summary>two-sum/testuser.js</summary>
+
+\`\`\`js
+${PLAIN_SOURCE}
+\`\`\`
+
+</details>`);
   });
 
   it("복잡도 OpenAI 가 실패해도 패턴 댓글은 정상 작성된다", async () => {
@@ -366,12 +386,6 @@ describe("tagPatterns — 레거시 단독 복잡도 issue comment 마이그레�
           ],
         });
       }
-      if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "GET") {
-        return okJson([]);
-      }
-      if (urlStr.includes("/pulls/comments/") && method === "DELETE") {
-        return okJson({});
-      }
       if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "POST") {
         return okJson({ id: 1 });
       }
@@ -499,9 +513,6 @@ describe("tagPatterns — 레거시 단독 복잡도 issue comment 마이그레�
           ],
         });
       }
-      if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "GET") {
-        return okJson([]);
-      }
       if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "POST") {
         return okJson({ id: 1 });
       }
@@ -531,85 +542,61 @@ describe("tagPatterns — 레거시 단독 복잡도 issue comment 마이그레�
   });
 });
 
-describe("tagPatterns — 기존 패턴 review comment 정리", () => {
+describe("tagPatterns — 분석 대상 파일 선택", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("같은 파일의 기존 Bot 패턴 댓글을 DELETE 한다", async () => {
-    const deletedIds = [];
-    globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
-      const urlStr = typeof url === "string" ? url : url.url;
-      const method = opts?.method ?? "GET";
-
-      if (urlStr.includes(`/pulls/${PR_NUMBER}/files`)) {
-        return okJson([makeSolutionFile("two-sum")]);
-      }
-      if (urlStr.startsWith("https://raw.example.com/")) {
-        return okText(PLAIN_SOURCE);
-      }
-      if (urlStr.includes("openai.com")) {
-        const body = JSON.parse(opts.body);
-        const isComplexity = body.messages[0].content.includes(
-          "시간/공간 복잡도를 분석"
-        );
-        if (isComplexity) {
-          return okJson({
-            choices: [
-              { message: { content: JSON.stringify({ files: [] }) } },
-            ],
-          });
-        }
-        return okJson({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  patterns: [],
-                  description: "",
-                }),
-              },
-            },
-          ],
-        });
-      }
-      if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "GET") {
-        return okJson([
-          {
-            id: 100,
-            user: { type: "Bot" },
-            body: PATTERN_MARKER,
-            path: "two-sum/testuser.js",
-          },
-          {
-            id: 101,
-            user: { type: "Bot" },
-            body: PATTERN_MARKER,
-            path: "valid-parentheses/testuser.js", // 다른 파일
-          },
-        ]);
-      }
-      if (urlStr.includes("/pulls/comments/") && method === "DELETE") {
-        const m = urlStr.match(/\/comments\/(\d+)/);
-        if (m) deletedIds.push(Number(m[1]));
-        return okJson({});
-      }
-      if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "POST") {
-        return okJson({ id: 1 });
-      }
-      if (urlStr.includes(`/issues/${PR_NUMBER}/comments`) && method === "GET") {
-        return okJson([]);
-      }
-      throw new Error(`Unexpected fetch: ${method} ${urlStr}`);
+  it.each([
+    [
+      "변경 파일 목록이 전달되지 않으면 PR의 모든 풀이 파일을 분석한다",
+      {
+        solutionFiles: [
+          makeSolutionFile("a", "user"),
+          makeSolutionFile("b", "user"),
+        ],
+        changedFilenames: null,
+        expectedFilenames: ["a/user.js", "b/user.js"],
+      },
+    ],
+    [
+      "변경 파일 목록이 있으면 해당 파일만 분석한다",
+      {
+        solutionFiles: [
+          makeSolutionFile("a", "user"),
+          makeSolutionFile("b", "user"),
+        ],
+        changedFilenames: ["b/user.js"],
+        expectedFilenames: ["b/user.js"],
+      },
+    ],
+    [
+      "변경 파일 중 삭제된 파일은 분석하지 않는다",
+      {
+        solutionFiles: [makeSolutionFile("a", "user", "removed")],
+        changedFilenames: ["a/user.js"],
+        expectedFilenames: [],
+      },
+    ],
+  ])("%s", async (_, testCase) => {
+    const {
+      solutionFiles,
+      changedFilenames,
+      expectedFilenames,
+    } = testCase;
+    const posts = [];
+    globalThis.fetch = makeFetchMock({
+      solutionFiles,
+      postCapture: posts,
     });
 
     await tagPatterns(
       REPO_OWNER, REPO_NAME, PR_NUMBER, HEAD_SHA,
       makePrData(),
-      APP_TOKEN, OPENAI_KEY
+      APP_TOKEN, OPENAI_KEY,
+      changedFilenames
     );
 
-    // 대상 파일(two-sum)의 기존 댓글만 삭제, 다른 파일은 보존
-    expect(deletedIds).toEqual([100]);
+    expect(posts.map(({ path }) => path)).toEqual(expectedFilenames);
   });
 });

@@ -239,6 +239,8 @@ describe("webhook 저장소 필터링", () => {
 describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
   const basePRPayload = {
     action: "synchronize",
+    before: "base-sha",
+    after: "head-sha",
     organization: { login: "DaleStudy" },
     repository: {
       name: "leetcode-study",
@@ -260,7 +262,13 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     vi.clearAllMocks();
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ files: [] }),
+      json: () =>
+        Promise.resolve({
+          files: [
+            { filename: "two-sum/testuser.js" },
+            { filename: "valid-parentheses/testuser.js" },
+          ],
+        }),
     });
   });
 
@@ -291,6 +299,10 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
       url.endsWith("/internal/tag-patterns")
     );
     expect(dispatchCall[1].headers["X-Internal-Secret"]).toBe("fake-secret");
+    expect(JSON.parse(dispatchCall[1].body).changedFilenames).toEqual([
+      "two-sum/testuser.js",
+      "valid-parentheses/testuser.js",
+    ]);
 
     expect(tagPatterns).not.toHaveBeenCalled();
     expect(postLearningStatus).not.toHaveBeenCalled();
@@ -356,5 +368,35 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     expect(ctx.waitUntil).not.toHaveBeenCalled();
     expect(tagPatterns).not.toHaveBeenCalled();
     expect(postLearningStatus).not.toHaveBeenCalled();
+  });
+
+  it("변경 파일 목록 조회에 실패하면 null로 폴백한다", async () => {
+    const ctx = makeCtx();
+    const env = {
+      OPENAI_API_KEY: "fake-openai",
+      INTERNAL_SECRET: "fake-secret",
+      WORKER_URL: "https://worker.test",
+    };
+
+    globalThis.fetch = vi.fn().mockImplementation((url) => {
+      if (url.includes("/compare/")) {
+        return Promise.reject(new Error("network failure"));
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    await handleWebhook(
+      makeRequest("pull_request", basePRPayload),
+      env,
+      ctx
+    );
+
+    const tagPatternsDispatch = globalThis.fetch.mock.calls.find(([url]) =>
+      url.endsWith("/internal/tag-patterns")
+    );
+    expect(tagPatternsDispatch).toBeDefined();
+
+    const payload = JSON.parse(tagPatternsDispatch[1].body);
+    expect(payload.changedFilenames).toBeNull();
   });
 });

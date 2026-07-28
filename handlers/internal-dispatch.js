@@ -58,7 +58,14 @@ export async function handleInternalDispatch(request, env, pathname) {
 }
 
 async function handleTagPatterns(payload, appToken, env) {
-  const { repoOwner, repoName, prNumber, headSha, prData } = payload;
+  const {
+    repoOwner,
+    repoName,
+    prNumber,
+    headSha,
+    prData,
+    changedFilenames,
+  } = payload;
   const result = await tagPatterns(
     repoOwner,
     repoName,
@@ -66,7 +73,8 @@ async function handleTagPatterns(payload, appToken, env) {
     headSha,
     prData,
     appToken,
-    env.OPENAI_API_KEY
+    env.OPENAI_API_KEY,
+    changedFilenames
   );
   return corsResponse({ handler: "tag-patterns", result });
 }

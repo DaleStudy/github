@@ -235,6 +235,28 @@ async function getChangedFilenames(repoOwner, repoName, baseSha, headSha, appTok
   return (data.files || []).map((f) => f.filename);
 }
 
+async function resolveChangedFilenames(payload, repoOwner, repoName, appToken) {
+  if (payload.action !== "synchronize" || !payload.before || !payload.after) {
+    return null;
+  }
+
+  let changedFilenames = null;
+
+  try {
+    changedFilenames = await getChangedFilenames(
+      repoOwner,
+      repoName,
+      payload.before,
+      payload.after,
+      appToken
+    );
+  } catch (error) {
+    console.error(`[resolveChangedFilenames] failed: ${error.message}`);
+  }
+
+  return changedFilenames;
+}
+
 /**
  * Pull Request 이벤트 처리
  * - opened/reopened: Week 설정 체크 + 알고리즘 패턴 태깅 (전체 파일)
@@ -288,6 +310,13 @@ async function handlePullRequestEvent(payload, env, ctx) {
   if (env.OPENAI_API_KEY && env.INTERNAL_SECRET && env.WORKER_URL) {
     const baseUrl = env.WORKER_URL;
 
+    const changedFilenames = await resolveChangedFilenames(
+      payload,
+      repoOwner,
+      repoName,
+      appToken
+    );
+
     const dispatchHeaders = {
       "Content-Type": "application/json",
       "X-Internal-Secret": env.INTERNAL_SECRET,
@@ -304,6 +333,7 @@ async function handlePullRequestEvent(payload, env, ctx) {
           ...commonPayload,
           headSha: pr.head.sha,
           prData: pr,
+          changedFilenames,
         }),
       }).catch((err) =>
         console.error(`[dispatch] tagPatterns failed: ${err.message}`)
@@ -329,22 +359,14 @@ async function handlePullRequestEvent(payload, env, ctx) {
     // INTERNAL_SECRET/WORKER_URL 미설정 시 기존 방식으로 폴백 (동일 invocation에서 순차 실행)
     console.warn("[handlePullRequestEvent] INTERNAL_SECRET or WORKER_URL not set, running handlers in-process");
 
-    try {
-      // synchronize일 때만 변경 파일 목록 추출 (최적화: #7)
-      let changedFilenames = null;
-      if (action === "synchronize" && payload.before && payload.after) {
-        changedFilenames = await getChangedFilenames(
-          repoOwner,
-          repoName,
-          payload.before,
-          payload.after,
-          appToken
-        );
-        console.log(
-          `[handlePullRequestEvent] synchronize: ${changedFilenames?.length ?? "fallback(all)"} files changed between ${payload.before.slice(0, 7)}...${payload.after.slice(0, 7)}`
-        );
-      }
+    const changedFilenames = await resolveChangedFilenames(
+      payload,
+      repoOwner,
+      repoName,
+      appToken
+    );
 
+    try {
       await tagPatterns(
         repoOwner,
         repoName,
