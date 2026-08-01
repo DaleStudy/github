@@ -240,10 +240,8 @@ async function resolveChangedFilenames(payload, repoOwner, repoName, appToken) {
     return null;
   }
 
-  let changedFilenames = null;
-
   try {
-    changedFilenames = await getChangedFilenames(
+    return await getChangedFilenames(
       repoOwner,
       repoName,
       payload.before,
@@ -252,9 +250,8 @@ async function resolveChangedFilenames(payload, repoOwner, repoName, appToken) {
     );
   } catch (error) {
     console.error(`[resolveChangedFilenames] failed: ${error.message}`);
+    return null;
   }
-
-  return changedFilenames;
 }
 
 /**
