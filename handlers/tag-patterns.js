@@ -23,7 +23,7 @@ const COMMENT_MARKER = "<!-- dalestudy-pattern-tag -->";
 // 레거시 단독 복잡도 issue comment 식별용. 새 합본 댓글에는 박지 않는다.
 const LEGACY_COMPLEXITY_MARKER = "<!-- dalestudy-complexity-analysis -->";
 const SOLUTION_PATH_REGEX = /^[^/]+\/[^/]+\.[^.]+$/;
-const MAX_FILE_SIZE = 20000; // 20K 문자 제한 (OpenAI 토큰 안전장치)
+const MAX_FILE_CONTENT_LENGTH = 20000; // OpenAI 입력 크기 안전장치
 
 /**
  * PR의 솔루션 파일들에 알고리즘 패턴 태그 달기
@@ -139,7 +139,7 @@ export async function tagPatterns(
 /**
  * 단일 파일 분석 + 코멘트 작성
  *
- * @param {{file: object, problemName: string, content: string}} fileEntry
+ * @param {{file: object, problemName: string, content: string, isContentTruncated: boolean}} fileEntry
  * @param {Promise<Array>} complexityPromise - 모든 파일의 복잡도 분석 결과 (병렬 진행)
  */
 async function tagSingleFile(
@@ -152,7 +152,12 @@ async function tagSingleFile(
   appToken,
   openaiApiKey
 ) {
-  const { file, problemName, content: fileContent } = fileEntry;
+  const {
+    file,
+    problemName,
+    content: fileContent,
+    isContentTruncated,
+  } = fileEntry;
 
   // OpenAI 패턴 분석
   const analysis = await generatePatternAnalysis(
@@ -167,7 +172,7 @@ async function tagSingleFile(
   let body = `${COMMENT_MARKER}
 ### 🏷️ 알고리즘 패턴 분석
 
-${renderAnalyzedSource(file.filename, fileContent)}
+${renderAnalyzedSource(file.filename, fileContent, isContentTruncated)}
 
 - **패턴**: ${patternsText}
 - **설명**: ${analysis.description || "(설명 없음)"}`;
@@ -209,15 +214,15 @@ ${renderAnalyzedSource(file.filename, fileContent)}
   return { patterns: analysis.patterns };
 }
 
-function renderAnalyzedSource(filename, content) {
+function renderAnalyzedSource(filename, content, isContentTruncated) {
   const language = filename.includes(".") ? filename.split(".").pop() : "";
-  const truncated = content.length >= MAX_FILE_SIZE ? "\n... (이하 생략)" : "";
+  const truncationNotice = isContentTruncated ? "\n... (이하 생략)" : "";
 
   return `<details>
 <summary>${filename}</summary>
 
 \`\`\`${language}
-${content}${truncated}
+${content}${truncationNotice}
 \`\`\`
 
 </details>`;
@@ -237,16 +242,18 @@ async function downloadFileEntries(solutionFiles) {
         );
       }
       let content = await res.text();
-      if (content.length > MAX_FILE_SIZE) {
-        content = content.slice(0, MAX_FILE_SIZE);
+      const isContentTruncated = content.length > MAX_FILE_CONTENT_LENGTH;
+      if (isContentTruncated) {
+        content = content.slice(0, MAX_FILE_CONTENT_LENGTH);
         console.log(
-          `[tagPatterns] Truncated ${file.filename} to ${MAX_FILE_SIZE} chars`
+          `[tagPatterns] Truncated ${file.filename} to ${MAX_FILE_CONTENT_LENGTH} chars`
         );
       }
       return {
         file,
         problemName: file.filename.split("/")[0],
         content,
+        isContentTruncated,
       };
     })
   );

@@ -19,6 +19,7 @@ const OPENAI_KEY = "fake-openai-key";
 
 const PATTERN_MARKER = "<!-- dalestudy-pattern-tag -->";
 const LEGACY_COMPLEXITY_MARKER = "<!-- dalestudy-complexity-analysis -->";
+const MAX_FILE_CONTENT_LENGTH = 20000;
 
 const PLAIN_SOURCE = "function solution() { return 0; }";
 
@@ -246,6 +247,43 @@ ${PLAIN_SOURCE}
 \`\`\`
 
 </details>`);
+  });
+
+  it.each([MAX_FILE_CONTENT_LENGTH - 1, MAX_FILE_CONTENT_LENGTH])(
+    "파일 내용 길이가 제한값 이하인 경우(%i자) 생략 문구를 표시하지 않는다",
+    async (contentLength) => {
+      const posts = [];
+      globalThis.fetch = makeFetchMock({
+        solutionFiles: [makeSolutionFile("two-sum")],
+        rawContent: "a".repeat(contentLength),
+        postCapture: posts,
+      });
+
+      await tagPatterns(
+        REPO_OWNER, REPO_NAME, PR_NUMBER, HEAD_SHA,
+        makePrData(),
+        APP_TOKEN, OPENAI_KEY
+      );
+
+      expect(posts[0].body).not.toContain("... (이하 생략)");
+    }
+  );
+
+  it("파일 내용 길이가 제한값을 초과하면 생략 문구를 표시한다", async () => {
+    const posts = [];
+    globalThis.fetch = makeFetchMock({
+      solutionFiles: [makeSolutionFile("two-sum")],
+      rawContent: "a".repeat(MAX_FILE_CONTENT_LENGTH + 1),
+      postCapture: posts,
+    });
+
+    await tagPatterns(
+      REPO_OWNER, REPO_NAME, PR_NUMBER, HEAD_SHA,
+      makePrData(),
+      APP_TOKEN, OPENAI_KEY
+    );
+
+    expect(posts[0].body).toContain("... (이하 생략)");
   });
 
   it("복잡도 OpenAI 가 실패해도 패턴 댓글은 정상 작성된다", async () => {
