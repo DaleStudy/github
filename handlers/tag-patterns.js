@@ -12,6 +12,7 @@
  */
 
 import { getGitHubHeaders } from "../utils/github.js";
+import { createCodeFence } from "../utils/markdown.js";
 import { hasMaintenanceLabel } from "../utils/validation.js";
 import { generatePatternAnalysis } from "../utils/openai.js";
 import {
@@ -217,13 +218,14 @@ ${renderAnalyzedSource(file.filename, fileContent, isContentTruncated)}
 function renderAnalyzedSource(filename, content, isContentTruncated) {
   const language = filename.includes(".") ? filename.split(".").pop() : "";
   const truncationNotice = isContentTruncated ? "\n... (이하 생략)" : "";
+  const codeFence = createCodeFence(content);
 
   return `<details>
 <summary>${filename}</summary>
 
-\`\`\`${language}
+${codeFence}${language}
 ${content}${truncationNotice}
-\`\`\`
+${codeFence}
 
 </details>`;
 }
