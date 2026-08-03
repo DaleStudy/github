@@ -11,6 +11,10 @@
  * @see https://developers.cloudflare.com/workers/platform/limits/#subrequests
  */
 
+import {
+  parseFileShaMarker,
+  renderFileShaMarker,
+} from "../utils/commentMarker.js";
 import { getGitHubHeaders } from "../utils/github.js";
 import { createCodeFence } from "../utils/markdown.js";
 import { hasMaintenanceLabel } from "../utils/validation.js";
@@ -36,7 +40,6 @@ const MAX_FILE_CONTENT_LENGTH = 20000; // OpenAI 입력 크기 안전장치
  * @param {object} prData - PR 객체 (draft, labels 포함)
  * @param {string} appToken - GitHub App installation token
  * @param {string} openaiApiKey
- * @param {string[]|null} [changedFilenames=null] - synchronize 시 변경된 파일명 목록 (null이면 전체 분석)
  */
 export async function tagPatterns(
   repoOwner,
@@ -45,8 +48,7 @@ export async function tagPatterns(
   headSha,
   prData,
   appToken,
-  openaiApiKey,
-  changedFilenames = null
+  openaiApiKey
 ) {
   // 2-1. Skip 조건
   if (prData.draft === true) {
@@ -79,13 +81,20 @@ export async function tagPatterns(
       SOLUTION_PATH_REGEX.test(f.filename)
   );
 
-  // changedFilenames가 제공되면 해당 파일만 대상으로 좁힘 (synchronize 최적화)
-  if (changedFilenames !== null) {
-    const changedSet = new Set(changedFilenames);
-    solutionFiles = solutionFiles.filter((f) => changedSet.has(f.filename));
-    console.log(
-      `[tagPatterns] PR #${prNumber}: narrowed to ${solutionFiles.length} changed solution files`
-    );
+  if (solutionFiles.length === 0) {
+    return { skipped: "no-solution-files" };
+  }
+
+  solutionFiles = await getUnanalyzedOrChangedFiles(
+    repoOwner,
+    repoName,
+    prNumber,
+    appToken,
+    solutionFiles
+  );
+
+  if (solutionFiles === null) {
+    return { skipped: "review-comments-unavailable" };
   }
 
   console.log(
@@ -171,7 +180,7 @@ async function tagSingleFile(
   const patternsText =
     analysis.patterns.length > 0 ? analysis.patterns.join(", ") : "감지된 패턴 없음";
   let body = `${COMMENT_MARKER}
-### 🏷️ 알고리즘 패턴 분석
+${file.sha ? `${renderFileShaMarker(file.sha)}\n` : ""}### 🏷️ 알고리즘 패턴 분석
 
 ${renderAnalyzedSource(file.filename, fileContent, isContentTruncated)}
 
@@ -228,6 +237,93 @@ ${content}${truncationNotice}
 ${codeFence}
 
 </details>`;
+}
+
+async function fetchReviewCommentsNewestFirst(
+  repoOwner,
+  repoName,
+  prNumber,
+  appToken
+) {
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/comments?sort=created&direction=desc&per_page=100`,
+      { headers: getGitHubHeaders(appToken) }
+    );
+
+    if (!response.ok) {
+      throw new Error(`GitHub API responded with ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error(
+      `[tagPatterns] Failed to load review comments: ${error.message}`
+    );
+    return null;
+  }
+}
+
+function extractLatestAnalyzedFileShas(commentsNewestFirst) {
+  const latestAnalyzedFileShas = new Map();
+
+  for (const comment of commentsNewestFirst) {
+    const hasLatestAnalysisForFile = latestAnalyzedFileShas.has(comment.path);
+    const isTopLevelComment = comment.in_reply_to_id == null;
+    const isBotPatternAnalysisComment =
+      comment.user?.type === "Bot" &&
+      comment.body?.includes(COMMENT_MARKER);
+
+    if (
+      !hasLatestAnalysisForFile &&
+      isTopLevelComment &&
+      isBotPatternAnalysisComment
+    ) {
+      latestAnalyzedFileShas.set(
+        comment.path,
+        parseFileShaMarker(comment.body)
+      );
+    }
+  }
+
+  return latestAnalyzedFileShas;
+}
+
+/**
+ * 이전에 분석하지 않았거나 파일 내용이 변경된 파일만 반환한다.
+ * 기존 분석 댓글을 조회하지 못하면 null을 반환한다.
+ */
+async function getUnanalyzedOrChangedFiles(
+  repoOwner,
+  repoName,
+  prNumber,
+  appToken,
+  solutionFiles
+) {
+  const reviewCommentsNewestFirst = await fetchReviewCommentsNewestFirst(
+    repoOwner,
+    repoName,
+    prNumber,
+    appToken
+  );
+
+  if (reviewCommentsNewestFirst === null) {
+    return null;
+  }
+
+  const latestAnalyzedFileShas = extractLatestAnalyzedFileShas(
+    reviewCommentsNewestFirst
+  );
+
+  function needsAnalysis(file) {
+    const latestAnalyzedFileSha = latestAnalyzedFileShas.get(file.filename);
+    const isFileShaMissing = file.sha == null;
+    const hasFileChanged = file.sha !== latestAnalyzedFileSha;
+
+    return isFileShaMissing || hasFileChanged;
+  }
+
+  return solutionFiles.filter(needsAnalysis);
 }
 
 /**

@@ -64,7 +64,6 @@ async function handleTagPatterns(payload, appToken, env) {
     prNumber,
     headSha,
     prData,
-    changedFilenames,
   } = payload;
   const result = await tagPatterns(
     repoOwner,
@@ -73,8 +72,7 @@ async function handleTagPatterns(payload, appToken, env) {
     headSha,
     prData,
     appToken,
-    env.OPENAI_API_KEY,
-    changedFilenames
+    env.OPENAI_API_KEY
   );
   return corsResponse({ handler: "tag-patterns", result });
 }

@@ -266,7 +266,7 @@ GitHub webhook
 
 - `INTERNAL_SECRET`과 `WORKER_URL`이 모두 설정되어야 활성화된다. 둘 중 하나라도 없으면 기존처럼 같은 invocation에서 순차 실행(subrequest 예산 공유)되어 파일이 많은 PR에서 예산을 초과할 수 있다.
 - 내부 엔드포인트는 `/internal/tag-patterns`, `/internal/learning-status`이며 `X-Internal-Secret` 헤더로 인증한다.
-- 참고: `tests/subrequest-budget.test.js`가 5개 파일 변경 시나리오에서 각 핸들러의 fetch 호출 수(`tagPatterns` 19회, `postLearningStatus` 31회)를 회귀 테스트로 박아둔다.
+- 참고: `tests/subrequest-budget.test.js`가 5개 파일 변경 시나리오에서 각 핸들러의 fetch 호출 수(`tagPatterns` 20회, `postLearningStatus` 31회)를 회귀 테스트로 박아둔다.
 
 ## 보안 및 권한
 

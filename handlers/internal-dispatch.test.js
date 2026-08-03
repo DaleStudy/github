@@ -96,10 +96,6 @@ describe("handleInternalDispatch — 라우팅", () => {
 
   it("/internal/tag-patterns 요청을 tagPatterns 로 payload 필드와 함께 라우팅한다", async () => {
     const prData = { number: 42, head: { sha: "abc123" } };
-    const changedFilenames = [
-      "two-sum/testuser.js",
-      "valid-parentheses/testuser.js",
-    ];
     const request = makeRequest("/internal/tag-patterns", {
       secret: VALID_SECRET,
       body: {
@@ -108,7 +104,6 @@ describe("handleInternalDispatch — 라우팅", () => {
         prNumber: 42,
         headSha: "abc123",
         prData,
-        changedFilenames,
       },
     });
 
@@ -128,8 +123,7 @@ describe("handleInternalDispatch — 라우팅", () => {
       "abc123",
       prData,
       "fake-token",
-      "fake-openai",
-      changedFilenames
+      "fake-openai"
     );
     expect(postLearningStatus).not.toHaveBeenCalled();
   });

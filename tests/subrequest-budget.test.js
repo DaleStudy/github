@@ -15,6 +15,7 @@ function makeSolutionFiles(count) {
   return Array.from({ length: count }, (_, i) => ({
     filename: `problem-${i + 1}/${USERNAME}.ts`,
     status: "added",
+    sha: "a".repeat(40),
     raw_url: `https://raw.example.com/problem-${i + 1}/${USERNAME}.ts`,
   }));
 }
@@ -43,7 +44,7 @@ describe("subrequest 예산 — 핸들러별 invocation", () => {
     vi.clearAllMocks();
   });
 
-  it("tagPatterns 는 변경 파일 15개에서 50회 이하 subrequest를 호출한다 (예상 49: files 1 + raw 15 + 패턴 OpenAI 15 + 복잡도 OpenAI 1 + POST 15 + 레거시 issue 코멘트 목록 1 + 레거시 DELETE 1)", async () => {
+  it("tagPatterns 는 변경 파일 15개에서 50회 이하 subrequest를 호출한다 (예상 50: files 1 + 리뷰 코멘트 목록 1 + raw 15 + 패턴 OpenAI 15 + 복잡도 OpenAI 1 + POST 15 + 레거시 issue 코멘트 목록 1 + 레거시 DELETE 1)", async () => {
     const solutionFiles = makeSolutionFiles(15);
 
     globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
@@ -103,6 +104,10 @@ describe("subrequest 예산 — 핸들러별 invocation", () => {
         });
       }
 
+      if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "GET") {
+        return okJson([]);
+      }
+
       if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "POST") {
         return okJson({ id: 999 });
       }
@@ -138,7 +143,7 @@ describe("subrequest 예산 — 핸들러별 invocation", () => {
     const fetchCount = globalThis.fetch.mock.calls.length;
 
     expect(result.tagged).toBe(15);
-    expect(fetchCount).toBe(49);
+    expect(fetchCount).toBe(50);
     expect(fetchCount).toBeLessThanOrEqual(50);
   });
 
