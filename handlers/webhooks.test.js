@@ -260,7 +260,7 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     vi.clearAllMocks();
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ files: [] }),
+      json: () => Promise.resolve({}),
     });
   });
 
@@ -357,4 +357,5 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     expect(tagPatterns).not.toHaveBeenCalled();
     expect(postLearningStatus).not.toHaveBeenCalled();
   });
+
 });

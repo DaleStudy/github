@@ -11,11 +11,14 @@ const USERNAME = "testuser";
 const APP_TOKEN = "fake-app-token";
 const OPENAI_KEY = "fake-openai-key";
 
-const SOLUTION_FILES = Array.from({ length: 5 }, (_, i) => ({
-  filename: `problem-${i + 1}/${USERNAME}.ts`,
-  status: "added",
-  raw_url: `https://raw.example.com/problem-${i + 1}/${USERNAME}.ts`,
-}));
+function makeSolutionFiles(count) {
+  return Array.from({ length: count }, (_, i) => ({
+    filename: `problem-${i + 1}/${USERNAME}.ts`,
+    status: "added",
+    sha: "a".repeat(40),
+    raw_url: `https://raw.example.com/problem-${i + 1}/${USERNAME}.ts`,
+  }));
+}
 
 function okJson(data) {
   return Promise.resolve({
@@ -36,33 +39,20 @@ function okText(text) {
   });
 }
 
-describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", () => {
+describe("subrequest 예산 — 핸들러별 invocation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("tagPatterns 는 50 회 이하 subrequest 를 호출한다 (예상 25: files 1 + raw 5 + 패턴 코멘트 목록 1 + DELETE 5 + 패턴 OpenAI 5 + 복잡도 OpenAI 1 + POST 5 + 레거시 issue 코멘트 목록 1 + 레거시 DELETE 1)", async () => {
+  it("tagPatterns 는 변경 파일 15개에서 50회 이하 subrequest를 호출한다 (예상 50: files 1 + 리뷰 코멘트 목록 1 + raw 15 + 패턴 OpenAI 15 + 복잡도 OpenAI 1 + POST 15 + 레거시 issue 코멘트 목록 1 + 레거시 DELETE 1)", async () => {
+    const solutionFiles = makeSolutionFiles(15);
+
     globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
       const urlStr = typeof url === "string" ? url : url.url;
       const method = opts?.method ?? "GET";
 
       if (urlStr.includes(`/pulls/${PR_NUMBER}/files`)) {
-        return okJson(SOLUTION_FILES);
-      }
-
-      if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "GET") {
-        return okJson(
-          SOLUTION_FILES.map((f, i) => ({
-            id: 1000 + i,
-            user: { type: "Bot" },
-            body: "<!-- dalestudy-pattern-tag -->",
-            path: f.filename,
-          }))
-        );
-      }
-
-      if (urlStr.includes("/pulls/comments/") && method === "DELETE") {
-        return okJson({});
+        return okJson(solutionFiles);
       }
 
       if (urlStr.startsWith("https://raw.example.com/")) {
@@ -80,7 +70,7 @@ describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", (
               {
                 message: {
                   content: JSON.stringify({
-                    files: SOLUTION_FILES.map((_, i) => ({
+                    files: solutionFiles.map((_, i) => ({
                       problemName: `problem-${i + 1}`,
                       solutions: [
                         {
@@ -112,6 +102,10 @@ describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", (
           ],
           usage: { prompt_tokens: 100, completion_tokens: 50 },
         });
+      }
+
+      if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "GET") {
+        return okJson([]);
       }
 
       if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "POST") {
@@ -148,14 +142,15 @@ describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", (
 
     const fetchCount = globalThis.fetch.mock.calls.length;
 
-    expect(result.tagged).toBe(5);
-    expect(fetchCount).toBe(25);
-    expect(fetchCount).toBeLessThan(50);
+    expect(result.tagged).toBe(15);
+    expect(fetchCount).toBe(50);
+    expect(fetchCount).toBeLessThanOrEqual(50);
   });
 
   it("postLearningStatus 는 50 회 이하 subrequest 를 호출한다 (예상 31: categories 1 + GraphQL project 1 + GraphQL items 1 + cohort PR files 15 + PR files 1 + 5×(raw+openai) + 이슈 코멘트 목록 1 + POST 1)", async () => {
+    const solutionFiles = makeSolutionFiles(5);
     const categories = Object.fromEntries(
-      SOLUTION_FILES.map((_, i) => [
+      solutionFiles.map((_, i) => [
         `problem-${i + 1}`,
         {
           difficulty: "Easy",
@@ -219,11 +214,11 @@ describe("subrequest 예산 — 핸들러별 invocation (변경 파일 5개)", (
       }
 
       if (COHORT_PR_NUMBERS.some((n) => urlStr.includes(`/pulls/${n}/files`))) {
-        return okJson(SOLUTION_FILES);
+        return okJson(solutionFiles);
       }
 
       if (urlStr.includes(`/pulls/${PR_NUMBER}/files`)) {
-        return okJson(SOLUTION_FILES);
+        return okJson(solutionFiles);
       }
 
       if (urlStr.startsWith("https://raw.example.com/")) {

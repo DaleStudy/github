@@ -58,7 +58,13 @@ export async function handleInternalDispatch(request, env, pathname) {
 }
 
 async function handleTagPatterns(payload, appToken, env) {
-  const { repoOwner, repoName, prNumber, headSha, prData } = payload;
+  const {
+    repoOwner,
+    repoName,
+    prNumber,
+    headSha,
+    prData,
+  } = payload;
   const result = await tagPatterns(
     repoOwner,
     repoName,
