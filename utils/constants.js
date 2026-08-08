@@ -25,8 +25,22 @@ export const OPENAI_CHAT_COMPLETIONS_URL = `https://gateway.ai.cloudflare.com/v1
 
 // 게이트웨이에 재시도를 맡긴다. Worker 안에서 재시도하면 CPU 예산을 깎지만,
 // 엣지에서 재시도하면 응답을 기다리는 시간일 뿐이다.
-export const AI_GATEWAY_RETRY_HEADERS = {
+const AI_GATEWAY_RETRY_HEADERS = {
   "cf-aig-max-attempts": "3",
   "cf-aig-retry-delay": "1000",
   "cf-aig-backoff": "exponential",
 };
+
+/**
+ * AI Gateway 경유 OpenAI 호출에 붙일 헤더.
+ *
+ * @param {string} gatewayToken - AI Gateway 인증 토큰
+ * @returns {Record<string, string>}
+ */
+export function aiGatewayHeaders(gatewayToken) {
+  return {
+    "cf-aig-authorization": `Bearer ${gatewayToken}`,
+    "Content-Type": "application/json",
+    ...AI_GATEWAY_RETRY_HEADERS,
+  };
+}

@@ -1,7 +1,7 @@
 /**
  * OpenAI API 통합 (AI Gateway 경유)
  */
-import { AI_GATEWAY_RETRY_HEADERS, OPENAI_CHAT_COMPLETIONS_URL } from "./constants.js";
+import { aiGatewayHeaders, OPENAI_CHAT_COMPLETIONS_URL } from "./constants.js";
 
 /**
  * PR diff를 분석하여 AI 코드 리뷰 생성
@@ -65,11 +65,7 @@ ${prDiff}
 
   const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
-    headers: {
-      "cf-aig-authorization": `Bearer ${gatewayToken}`,
-      "Content-Type": "application/json",
-      ...AI_GATEWAY_RETRY_HEADERS,
-    },
+    headers: aiGatewayHeaders(gatewayToken),
     body: JSON.stringify({
       model: "gpt-5-nano",
       messages: [
@@ -144,11 +140,7 @@ ${fileContent}
 
   const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
-    headers: {
-      "cf-aig-authorization": `Bearer ${gatewayToken}`,
-      "Content-Type": "application/json",
-      ...AI_GATEWAY_RETRY_HEADERS,
-    },
+    headers: aiGatewayHeaders(gatewayToken),
     body: JSON.stringify({
       model: "gpt-5-nano",
       messages: [
@@ -223,11 +215,7 @@ ${truncatedContent}
 
   const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
-    headers: {
-      "cf-aig-authorization": `Bearer ${gatewayToken}`,
-      "Content-Type": "application/json",
-      ...AI_GATEWAY_RETRY_HEADERS,
-    },
+    headers: aiGatewayHeaders(gatewayToken),
     body: JSON.stringify({
       model: "gpt-5-nano",
       messages: [

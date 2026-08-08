@@ -557,6 +557,26 @@ function solution() { return 0; }`;
     expect(captured).not.toContain("TC: O(n)");
     expect(captured).not.toContain("SC: O(1)");
   });
+
+  it("AI Gateway 인증 헤더와 재시도 헤더를 함께 보낸다", async () => {
+    let captured = null;
+    globalThis.fetch = vi.fn().mockImplementation(async (url, opts) => {
+      captured = opts.headers;
+      return await makeOpenAIResponse([makeSingleSolutionAnalysis("two-sum")]);
+    });
+
+    await callComplexityAnalysis(
+      [{ problemName: "two-sum", content: PLAIN_SOURCE }],
+      "fake-key"
+    );
+
+    expect(captured).toMatchObject({
+      "cf-aig-authorization": "Bearer fake-key",
+      "cf-aig-max-attempts": "3",
+      "cf-aig-retry-delay": "1000",
+      "cf-aig-backoff": "exponential",
+    });
+  });
 });
 
 // ── renderComplexitySection ───────────────────────

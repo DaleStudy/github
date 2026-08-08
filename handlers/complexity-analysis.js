@@ -10,7 +10,7 @@
  *  - LLM : actualTime / actualSpace / feedback / suggestion / headerLine 만 책임.
  */
 
-import { AI_GATEWAY_RETRY_HEADERS, OPENAI_CHAT_COMPLETIONS_URL } from "../utils/constants.js";
+import { aiGatewayHeaders, OPENAI_CHAT_COMPLETIONS_URL } from "../utils/constants.js";
 
 // ── 상수 ──────────────────────────────────────────
 
@@ -252,10 +252,7 @@ export async function callComplexityAnalysis(fileEntries, gatewayToken) {
 
   const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
-    headers: {
-      "cf-aig-authorization": `Bearer ${gatewayToken}`,
-      "Content-Type": "application/json",
-    },
+    headers: aiGatewayHeaders(gatewayToken),
     body: JSON.stringify({
       model: "gpt-5-nano",
       messages: [
