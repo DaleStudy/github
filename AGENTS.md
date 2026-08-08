@@ -347,8 +347,8 @@ https://github.com/settings/apps/dalestudy
 ### 4. Worker Secrets 설정
 
 ```bash
-# OpenAI API Key (AI 코드 리뷰용, 필수)
-wrangler secret put OPENAI_API_KEY
+# AI Gateway 인증 토큰 (AI 코드 리뷰용, 필수)
+wrangler secret put AI_GATEWAY_TOKEN
 
 # Webhook Secret (선택사항)
 wrangler secret put WEBHOOK_SECRET

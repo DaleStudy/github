@@ -59,7 +59,7 @@ describe("subrequest 예산 — 핸들러별 invocation", () => {
         return okText("function solution() { return 0; }");
       }
 
-      if (urlStr.includes("openai.com/v1/chat/completions")) {
+      if (urlStr.includes("/openai/chat/completions")) {
         const body = JSON.parse(opts.body);
         const isComplexity = body.messages[0].content.includes(
           "시간/공간 복잡도를 분석"
@@ -225,7 +225,7 @@ describe("subrequest 예산 — 핸들러별 invocation", () => {
         return okText("function solution() { return 0; }");
       }
 
-      if (urlStr.includes("openai.com/v1/chat/completions")) {
+      if (urlStr.includes("/openai/chat/completions")) {
         return okJson({
           choices: [
             {

@@ -10,6 +10,8 @@
  *  - LLM : actualTime / actualSpace / feedback / suggestion / headerLine 만 책임.
  */
 
+import { aiGatewayHeaders, OPENAI_CHAT_COMPLETIONS_URL } from "../utils/constants.js";
+
 // ── 상수 ──────────────────────────────────────────
 
 const FILE_DELIMITER = "=====";
@@ -240,7 +242,7 @@ export function composeSolution(modelSol, originalContent) {
   };
 }
 
-export async function callComplexityAnalysis(fileEntries, apiKey) {
+export async function callComplexityAnalysis(fileEntries, gatewayToken) {
   const userPrompt = fileEntries
     .map(
       (f) =>
@@ -248,12 +250,9 @@ export async function callComplexityAnalysis(fileEntries, apiKey) {
     )
     .join("\n\n");
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: aiGatewayHeaders(gatewayToken),
     body: JSON.stringify({
       model: "gpt-5-nano",
       messages: [
