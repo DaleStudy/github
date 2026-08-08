@@ -264,10 +264,10 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     });
   });
 
-  it("OPENAI_API_KEY, INTERNAL_SECRET, WORKER_URL 이 모두 설정되면 ctx.waitUntil 로 self-fetch 2 회를 디스패치한다", async () => {
+  it("AI_GATEWAY_TOKEN, INTERNAL_SECRET, WORKER_URL 이 모두 설정되면 ctx.waitUntil 로 self-fetch 2 회를 디스패치한다", async () => {
     const ctx = makeCtx();
     const env = {
-      OPENAI_API_KEY: "fake-openai",
+      AI_GATEWAY_TOKEN: "fake-gateway-token",
       INTERNAL_SECRET: "fake-secret",
       WORKER_URL: "https://worker.test",
     };
@@ -299,7 +299,7 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
   it("INTERNAL_SECRET 이 없으면 in-process 핸들러 호출로 폴백한다", async () => {
     const ctx = makeCtx();
     const env = {
-      OPENAI_API_KEY: "fake-openai",
+      AI_GATEWAY_TOKEN: "fake-gateway-token",
       WORKER_URL: "https://worker.test",
     };
 
@@ -323,7 +323,7 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
   it("WORKER_URL 이 없으면 in-process 핸들러 호출로 폴백한다", async () => {
     const ctx = makeCtx();
     const env = {
-      OPENAI_API_KEY: "fake-openai",
+      AI_GATEWAY_TOKEN: "fake-gateway-token",
       INTERNAL_SECRET: "fake-secret",
     };
 
@@ -339,7 +339,7 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     expect(postLearningStatus).toHaveBeenCalledTimes(1);
   });
 
-  it("OPENAI_API_KEY 가 없으면 디스패치도 핸들러 호출도 하지 않는다", async () => {
+  it("AI_GATEWAY_TOKEN 가 없으면 디스패치도 핸들러 호출도 하지 않는다", async () => {
     const ctx = makeCtx();
     const env = {
       INTERNAL_SECRET: "fake-secret",

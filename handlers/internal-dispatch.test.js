@@ -88,7 +88,7 @@ describe("handleInternalDispatch — 인증", () => {
 });
 
 describe("handleInternalDispatch — 라우팅", () => {
-  const env = { INTERNAL_SECRET: VALID_SECRET, OPENAI_API_KEY: "fake-openai" };
+  const env = { INTERNAL_SECRET: VALID_SECRET, AI_GATEWAY_TOKEN: "fake-gateway-token" };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -123,7 +123,7 @@ describe("handleInternalDispatch — 라우팅", () => {
       "abc123",
       prData,
       "fake-token",
-      "fake-openai"
+      "fake-gateway-token"
     );
     expect(postLearningStatus).not.toHaveBeenCalled();
   });
@@ -154,7 +154,7 @@ describe("handleInternalDispatch — 라우팅", () => {
       42,
       "testuser",
       "fake-token",
-      "fake-openai"
+      "fake-gateway-token"
     );
     expect(tagPatterns).not.toHaveBeenCalled();
   });
@@ -200,7 +200,7 @@ describe("handleInternalDispatch — 라우팅", () => {
 });
 
 describe("handleInternalDispatch — 에러 처리", () => {
-  const env = { INTERNAL_SECRET: VALID_SECRET, OPENAI_API_KEY: "fake-openai" };
+  const env = { INTERNAL_SECRET: VALID_SECRET, AI_GATEWAY_TOKEN: "fake-gateway-token" };
 
   beforeEach(() => {
     vi.clearAllMocks();

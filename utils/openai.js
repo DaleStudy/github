@@ -1,6 +1,7 @@
 /**
- * OpenAI API 통합 (GPT-4.1-nano)
+ * OpenAI API 통합 (AI Gateway 경유)
  */
+import { AI_GATEWAY_RETRY_HEADERS, OPENAI_CHAT_COMPLETIONS_URL } from "./constants.js";
 
 /**
  * PR diff를 분석하여 AI 코드 리뷰 생성
@@ -8,7 +9,7 @@
  * @param {string} prDiff - PR의 diff 내용
  * @param {string} prTitle - PR 제목
  * @param {string} prBody - PR 본문
- * @param {string} apiKey - OpenAI API 키
+ * @param {string} gatewayToken - AI Gateway 인증 토큰
  * @param {string} userRequest - 사용자의 구체적인 요청 (선택사항)
  * @returns {Promise<string>} AI가 생성한 리뷰 댓글 (마크다운)
  */
@@ -16,7 +17,7 @@ export async function generateCodeReview(
   prDiff,
   prTitle,
   prBody,
-  apiKey,
+  gatewayToken,
   userRequest = null
 ) {
   // userRequest가 있으면 Q&A 모드, 없으면 전체 리뷰 모드
@@ -62,11 +63,12 @@ ${prDiff}
     userPrompt += `\n이 풀 리퀘스트를 리뷰해주세요.`;
   }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      "cf-aig-authorization": `Bearer ${gatewayToken}`,
       "Content-Type": "application/json",
+      ...AI_GATEWAY_RETRY_HEADERS,
     },
     body: JSON.stringify({
       model: "gpt-5-nano",
@@ -93,10 +95,10 @@ ${prDiff}
  *
  * @param {string} fileContent - 분석할 소스 코드 내용
  * @param {string} problemName - 문제 이름 (폴더명)
- * @param {string} apiKey - OpenAI API 키
+ * @param {string} gatewayToken - AI Gateway 인증 토큰
  * @returns {Promise<{patterns: string[], description: string}>}
  */
-export async function generatePatternAnalysis(fileContent, problemName, apiKey) {
+export async function generatePatternAnalysis(fileContent, problemName, gatewayToken) {
   const systemPrompt = `당신은 리트코드 문제 풀이의 알고리즘 패턴을 분석하는 전문가입니다.
 주어진 소스 코드를 분석해서, 다음 패턴 목록 중 해당되는 것만 골라주세요.
 
@@ -140,11 +142,12 @@ ${fileContent}
 
 위 코드에 사용된 알고리즘 패턴을 분석해주세요.`;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      "cf-aig-authorization": `Bearer ${gatewayToken}`,
       "Content-Type": "application/json",
+      ...AI_GATEWAY_RETRY_HEADERS,
     },
     body: JSON.stringify({
       model: "gpt-5-nano",
@@ -184,10 +187,10 @@ ${fileContent}
  * @param {string} fileContent - 분석할 소스 코드 내용
  * @param {string} problemName - 문제 이름 (폴더명)
  * @param {{difficulty: string, categories: string[], intended_approach: string}} problemInfo - 문제 메타 정보
- * @param {string} apiKey - OpenAI API 키
+ * @param {string} gatewayToken - AI Gateway 인증 토큰
  * @returns {Promise<{matches: boolean, explanation: string}>}
  */
-export async function generateApproachAnalysis(fileContent, problemName, problemInfo, apiKey) {
+export async function generateApproachAnalysis(fileContent, problemName, problemInfo, gatewayToken) {
   const systemPrompt = `You are an algorithm analysis expert. Determine if code matches the intended approach.
 
 Respond with a JSON object in this exact format:
@@ -218,11 +221,12 @@ ${truncatedContent}
 
 위 코드가 의도된 접근법과 일치하는지 분석해주세요.`;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      "cf-aig-authorization": `Bearer ${gatewayToken}`,
       "Content-Type": "application/json",
+      ...AI_GATEWAY_RETRY_HEADERS,
     },
     body: JSON.stringify({
       model: "gpt-5-nano",

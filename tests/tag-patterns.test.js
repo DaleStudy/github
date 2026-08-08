@@ -99,7 +99,7 @@ function makeFetchMock({
       return okText(rawContent);
     }
 
-    if (urlStr.includes("openai.com/v1/chat/completions")) {
+    if (urlStr.includes("/openai/chat/completions")) {
       const body = JSON.parse(opts.body);
       const isComplexity = body.messages[0].content.includes(
         "시간/공간 복잡도를 분석"
@@ -427,7 +427,7 @@ describe("tagPatterns — 레거시 단독 복잡도 issue comment 마이그레�
       if (urlStr.startsWith("https://raw.example.com/")) {
         return okText(PLAIN_SOURCE);
       }
-      if (urlStr.includes("openai.com")) {
+      if (urlStr.includes("/openai/chat/completions")) {
         const body = JSON.parse(opts.body);
         const isComplexity = body.messages[0].content.includes(
           "시간/공간 복잡도를 분석"
@@ -495,7 +495,7 @@ describe("tagPatterns — 레거시 단독 복잡도 issue comment 마이그레�
       if (urlStr.startsWith("https://raw.example.com/")) {
         return okText(PLAIN_SOURCE);
       }
-      if (urlStr.includes("openai.com")) {
+      if (urlStr.includes("/openai/chat/completions")) {
         const body = JSON.parse(opts.body);
         const isComplexity = body.messages[0].content.includes(
           "시간/공간 복잡도를 분석"
@@ -557,7 +557,7 @@ describe("tagPatterns — 레거시 단독 복잡도 issue comment 마이그레�
       if (urlStr.startsWith("https://raw.example.com/")) {
         return okText(PLAIN_SOURCE);
       }
-      if (urlStr.includes("openai.com")) {
+      if (urlStr.includes("/openai/chat/completions")) {
         const body = JSON.parse(opts.body);
         const isComplexity = body.messages[0].content.includes(
           "시간/공간 복잡도를 분석"
