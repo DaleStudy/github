@@ -17,7 +17,6 @@ import {
 } from "../utils/commentMarker.js";
 import { getGitHubHeaders } from "../utils/github.js";
 import { createCodeFence } from "../utils/markdown.js";
-import { hasMaintenanceLabel } from "../utils/validation.js";
 import { generatePatternAnalysis } from "../utils/openai.js";
 import {
   callComplexityAnalysis,
@@ -56,13 +55,8 @@ export async function tagPatterns(
     return { skipped: "draft" };
   }
 
-  const labels = (prData.labels || []).map((l) => l.name);
-  if (hasMaintenanceLabel(labels)) {
-    console.log(`[tagPatterns] Skipping PR #${prNumber}: maintenance label`);
-    return { skipped: "maintenance" };
-  }
-
   // 2-2. PR 변경 파일 목록 조회 + 필터링
+  // 풀이 파일이 없는 PR은 아래 SOLUTION_PATH_REGEX 필터에서 걸러진다
   const filesResponse = await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/files?per_page=100`,
     { headers: getGitHubHeaders(appToken) }

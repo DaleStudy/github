@@ -160,19 +160,6 @@ describe("tagPatterns — skip 조건", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("maintenance 라벨이 있으면 skip 한다", async () => {
-    globalThis.fetch = vi.fn();
-
-    const result = await tagPatterns(
-      REPO_OWNER, REPO_NAME, PR_NUMBER, HEAD_SHA,
-      makePrData({ labels: [{ name: "maintenance" }] }),
-      APP_TOKEN, OPENAI_KEY
-    );
-
-    expect(result).toEqual({ skipped: "maintenance" });
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-  });
-
   it("솔루션 파일이 없으면 skip 한다", async () => {
     globalThis.fetch = makeFetchMock({
       solutionFiles: [

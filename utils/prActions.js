@@ -4,8 +4,11 @@
 
 import { errorResponse } from "./cors.js";
 import { getGitHubHeaders } from "./github.js";
-import { validateOrganization, hasMaintenanceLabel } from "./validation.js";
-import { getProjectFields } from "./prWeeks.js";
+import { validateOrganization } from "./validation.js";
+import { getPrFields } from "./prWeeks.js";
+
+// statusCheckRollup이 전부 통과했을 때의 상태
+const PASSING_CHECK_STATE = "SUCCESS";
 
 /**
  * 공통 payload 파서
@@ -105,16 +108,27 @@ export function filterTargetPrs(pullRequests, excludes) {
  * 공통 skip 조건
  */
 export function getSkipReason(pr) {
-  const labels = (pr.labels || []).map((label) => label.name);
-  if (hasMaintenanceLabel(labels)) {
-    return "maintenance labeled";
-  }
-
   if (pr.draft) {
     return "draft PR";
   }
 
   return null;
+}
+
+/**
+ * CI 미통과 skip 사유
+ *
+ * statusCheckRollup은 PENDING/FAILURE/ERROR/EXPECTED를 돌려주고, 체크가 하나도
+ * 없으면 null이다. SUCCESS가 아니면 승인 리뷰를 남기지 않는다.
+ *
+ * @returns {string|null} 통과했으면 null
+ */
+export function getCheckSkipReason(pr) {
+  if (pr.checkState === PASSING_CHECK_STATE) {
+    return null;
+  }
+
+  return `checks ${(pr.checkState ?? "missing").toLowerCase()}`;
 }
 
 /**
@@ -204,12 +218,13 @@ export async function filterByWeekAndStatus(pullRequests, weekFilter, repoOwner,
   let solvingExcluded = 0;
 
   for (const pr of pullRequests) {
-    // 프로젝트 필드 조회 (Week, Status)
-    const fields = await getProjectFields(repoOwner, repoName, pr.number, appToken);
+    // 프로젝트 필드(Week, Status)와 CI 상태 조회
+    const fields = await getPrFields(repoOwner, repoName, pr.number, appToken);
 
-    // PR 객체에 Week와 Status 메타데이터 추가
+    // PR 객체에 메타데이터 추가
     pr.week = fields.week;
     pr.status = fields.status;
+    pr.checkState = fields.checkState;
 
     // Week 필터링
     if (!matchesWeek(fields.week, weekFilter)) {

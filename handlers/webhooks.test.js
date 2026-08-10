@@ -58,7 +58,12 @@ describe("webhook 저장소 필터링", () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve({ state: "open", labels: [], draft: false }),
+        Promise.resolve({
+          state: "open",
+          title: "[testuser] WEEK 01 Solutions",
+          labels: [],
+          draft: false,
+        }),
     });
   });
 
@@ -68,7 +73,12 @@ describe("webhook 저장소 필터링", () => {
         action: "opened",
         organization: { login: "DaleStudy" },
         repository: { name: "daleui", owner: { login: "DaleStudy" } },
-        pull_request: { number: 1, labels: [], head: { sha: "abc" } },
+        pull_request: {
+          number: 1,
+          title: "[testuser] WEEK 01 Solutions",
+          labels: [],
+          head: { sha: "abc" },
+        },
       });
 
       const response = await handleWebhook(request, env);
@@ -87,6 +97,7 @@ describe("webhook 저장소 필터링", () => {
         },
         pull_request: {
           number: 1,
+          title: "[testuser] WEEK 01 Solutions",
           labels: [],
           head: { sha: "abc" },
           user: { login: "testuser" },
@@ -192,7 +203,12 @@ describe("webhook 저장소 필터링", () => {
           name: "leetcode-study",
           owner: { login: "OtherOrg" },
         },
-        pull_request: { number: 1, labels: [], head: { sha: "abc" } },
+        pull_request: {
+          number: 1,
+          title: "[testuser] WEEK 01 Solutions",
+          labels: [],
+          head: { sha: "abc" },
+        },
       });
 
       const response = await handleWebhook(request, env);
@@ -208,7 +224,12 @@ describe("webhook 저장소 필터링", () => {
           name: "leetcode-study",
           owner: { login: "DaleStudy" },
         },
-        pull_request: { number: 1, labels: [], head: { sha: "abc" } },
+        pull_request: {
+          number: 1,
+          title: "[testuser] WEEK 01 Solutions",
+          labels: [],
+          head: { sha: "abc" },
+        },
       });
 
       const response = await handleWebhook(request, env);
@@ -246,6 +267,7 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     },
     pull_request: {
       number: 42,
+      title: "[testuser] WEEK 01 Solutions",
       labels: [],
       head: { sha: "head-sha" },
       user: { login: "testuser" },

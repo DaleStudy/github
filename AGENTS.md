@@ -180,7 +180,7 @@ GitHub Organization webhook 수신용 엔드포인트
 
 #### `POST /approve-prs`
 
-열려있는 답안 제출 PR을 일괄 승인합니다. `excludes` 배열로 특정 PR을 제외합니다. 이미 승인된 PR, `maintenance` 라벨, Draft 상태의 PR은 자동으로 스킵됩니다.
+열려있는 답안 제출 PR을 일괄 승인합니다. `excludes` 배열로 특정 PR을 제외합니다. 이미 승인된 PR과 Draft 상태의 PR은 자동으로 스킵됩니다. CI가 통과하지 않은 PR(`statusCheckRollup.state !== "SUCCESS"`)도 스킵되어, 체크가 깨진 PR에는 승인 리뷰를 남기지 않습니다.
 
 **Request:**
 
@@ -208,7 +208,7 @@ GitHub Organization webhook 수신용 엔드포인트
 
 #### `POST /merge-prs`
 
-열려있는 PR을 일괄 병합합니다. 기본 병합 방식은 `squash`이며 `merge_method` 값으로 `merge | squash | rebase` 중 선택할 수 있습니다. `excludes`로 특정 PR을 제외할 수 있습니다. 승인 리뷰가 없거나 `maintenance` 라벨이 붙은 PR, Draft PR, GitHub `mergeable_state !== "clean"` PR은 스킵되며 `unknown`/`behind` 상태는 최대 1초 후 한 번 더 확인합니다.
+열려있는 PR을 일괄 병합합니다. 기본 병합 방식은 `squash`이며 `merge_method` 값으로 `merge | squash | rebase` 중 선택할 수 있습니다. `excludes`로 특정 PR을 제외할 수 있습니다. 승인 리뷰가 없는 PR, Draft PR, GitHub `mergeable_state !== "clean"` PR은 스킵되며 `unknown`/`behind` 상태는 최대 1초 후 한 번 더 확인합니다.
 
 **Request:**
 
@@ -239,10 +239,41 @@ GitHub Organization webhook 수신용 엔드포인트
 }
 ```
 
+#### `POST /resolve-iteration`
+
+주어진 날짜가 어느 기수의 몇 주차인지 조회합니다. 리트코드 스터디는 기수마다 프로젝트 보드를 새로 만들고 보드의 Week 필드(Iteration)가 주차 일정을 관리하므로, 주차 번호를 하드코딩하지 않고 여기서 읽습니다.
+
+Actions의 기본 `GITHUB_TOKEN`으로는 org 프로젝트 보드를 읽을 수 없어(`read:project` 스코프 부재) App 토큰을 가진 이 워커가 조회를 대신합니다. 완료된 주차는 `completedIterations`로 옮겨가므로 두 배열을 모두 확인합니다.
+
+**Request:**
+
+```json
+{ "date": "2026-08-08" }
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "date": "2026-08-08",
+  "found": true,
+  "cohort": 8,
+  "week": 7,
+  "week_label": "Week 7",
+  "project_number": 29,
+  "project_title": "리트코드 스터디 8기",
+  "start_date": "2026-08-02",
+  "end_date": "2026-08-08"
+}
+```
+
+해당 날짜를 포함하는 주차가 없으면(기수 사이 휴식기 등) `{ "success": true, "date": "...", "found": false }`를 돌려줍니다.
+
 ### 3. 워크플로우
 
 1. Open PR 목록 조회 (GitHub REST API)
-2. `maintenance` 라벨 있는 PR 스킵
+2. 풀이 제출 PR이 아닌 PR 스킵 (제목이 `WEEK NN Solutions` 형태가 아니면 봇 테스트·저장소 정리 PR로 간주)
 3. 각 PR의 Week 설정 확인 (GitHub GraphQL API - Projects v2 접근 필요)
 4. Week 없음 → 경고 댓글 작성 (중복 방지: Bot이 작성한 경고 댓글이 이미 있으면 스킵)
 5. Week 있음 → 기존 경고 댓글 삭제 (Bot이 작성한 Week 경고 댓글만)

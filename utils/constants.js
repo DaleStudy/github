@@ -13,9 +13,6 @@ export const WEBHOOK_URL = "https://github.dalestudy.com/webhooks";
 export const ALLOWED_ORG = "DaleStudy";
 export const ALLOWED_REPO = "leetcode-study";
 
-// 라벨
-export const MAINTENANCE_LABEL = "maintenance";
-
 // AI Gateway 를 거치는 OpenAI 엔드포인트.
 // OpenAI 키는 게이트웨이에 저장돼 있어 요청에 싣지 않는다. 키를 실으면
 // 게이트웨이가 저장된 키를 끼워 넣지 않고 그대로 전달한다.

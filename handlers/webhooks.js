@@ -15,7 +15,7 @@ import {
 } from "../utils/prWeeks.js";
 import {
   validateOrganization,
-  hasMaintenanceLabel,
+  isSolutionPR,
   isClosedPR,
 } from "../utils/validation.js";
 import { ALLOWED_REPO } from "../utils/constants.js";
@@ -131,7 +131,7 @@ async function handleProjectsV2ItemEvent(payload, env) {
     return corsResponse({ message: `Ignored: ${repoName}` });
   }
 
-  // PR 상태 확인 (closed PR, maintenance 라벨 예외)
+  // PR 상태 확인 (closed PR, 풀이 PR이 아닌 경우 예외)
   const prResponse = await fetch(
     `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}`,
     { headers: getGitHubHeaders(appToken) }
@@ -146,11 +146,10 @@ async function handleProjectsV2ItemEvent(payload, env) {
       return corsResponse({ message: "Ignored: closed PR" });
     }
 
-    // maintenance 라벨 체크
-    const labels = prData.labels.map((l) => l.name);
-    if (hasMaintenanceLabel(labels)) {
-      console.log(`Skipping PR #${prNumber}: has maintenance label`);
-      return corsResponse({ message: "Ignored: maintenance label" });
+    // 풀이 제출 PR이 아니면 스킵
+    if (!isSolutionPR(prData.title)) {
+      console.log(`Skipping PR #${prNumber}: not a solution PR`);
+      return corsResponse({ message: "Ignored: not a solution PR" });
     }
   }
 
@@ -231,11 +230,10 @@ async function handlePullRequestEvent(payload, env, ctx) {
   const repoName = payload.repository.name;
   const prNumber = pr.number;
 
-  // maintenance 라벨 체크 (early exit - GitHub API 호출 전에)
-  const labels = pr.labels.map((l) => l.name);
-  if (hasMaintenanceLabel(labels)) {
-    console.log(`Skipping PR #${prNumber}: has maintenance label`);
-    return corsResponse({ message: "Ignored: maintenance label" });
+  // 풀이 제출 PR이 아니면 스킵 (early exit - GitHub API 호출 전에)
+  if (!isSolutionPR(pr.title)) {
+    console.log(`Skipping PR #${prNumber}: not a solution PR`);
+    return corsResponse({ message: "Ignored: not a solution PR" });
   }
 
   const appToken = await generateGitHubAppToken(env);
@@ -638,15 +636,6 @@ async function handleApprovalRequest(repoOwner, repoName, prNumber, githubToken)
       return {
         success: false,
         error: "PR is in draft state",
-      };
-    }
-
-    // maintenance 라벨 체크
-    const labels = prData.labels.map((l) => l.name);
-    if (hasMaintenanceLabel(labels)) {
-      return {
-        success: false,
-        error: "PR has maintenance label",
       };
     }
 

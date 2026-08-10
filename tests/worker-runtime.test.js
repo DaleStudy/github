@@ -41,6 +41,21 @@ describe("Worker runtime smoke test", () => {
     await expect(response.json()).resolves.toEqual({ error: "Not found" });
   });
 
+  it("routes /resolve-iteration and rejects a malformed date before hitting GitHub", async () => {
+    const response = await fetchWorker("https://example.com/resolve-iteration", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ date: "2026/08/08" }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Invalid date format: 2026/08/08 (expected YYYY-MM-DD)",
+    });
+  });
+
   it("exposes WORKER_URL from wrangler config in env", () => {
     expect(env.WORKER_URL).toBe("https://github.dalestudy.workers.dev");
   });

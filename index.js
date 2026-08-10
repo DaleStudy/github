@@ -9,6 +9,7 @@ import { handleWebhook } from "./handlers/webhooks.js";
 import { handleInternalDispatch } from "./handlers/internal-dispatch.js";
 import { approvePrs } from "./handlers/approve_prs.js";
 import { mergePrs } from "./handlers/merge_prs.js";
+import { resolveIterationHandler } from "./handlers/resolve-iteration.js";
 import { preflightResponse, corsResponse, errorResponse } from "./utils/cors.js";
 import { verifyWebhookSignature } from "./utils/webhook.js";
 
@@ -73,6 +74,11 @@ export default {
     // Bulk merge open PRs
     if (url.pathname === "/merge-prs" || url.pathname === "/merge_prs") {
       return mergePrs(request, env);
+    }
+
+    // 특정 날짜가 속한 기수/주차 조회
+    if (url.pathname === "/resolve-iteration") {
+      return resolveIterationHandler(request, env);
     }
 
     // 지원하지 않는 엔드포인트

@@ -6,6 +6,7 @@ import {
   filterTargetPrs,
   filterByWeekAndStatus,
   getSkipReason,
+  getCheckSkipReason,
   formatResult,
   safeJson,
   hasApprovedReview,
@@ -45,6 +46,15 @@ export async function approvePrs(request, env) {
       if (skipReason) {
         skipped++;
         results.push(formatResult(pr, { skipped: true, reason: skipReason }));
+        continue;
+      }
+
+      const checkSkipReason = getCheckSkipReason(pr);
+      if (checkSkipReason) {
+        skipped++;
+        results.push(
+          formatResult(pr, { skipped: true, reason: checkSkipReason })
+        );
         continue;
       }
 

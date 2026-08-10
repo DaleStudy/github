@@ -5,7 +5,7 @@
 import { generateGitHubAppToken, getGitHubHeaders } from "../utils/github.js";
 import { corsResponse, errorResponse } from "../utils/cors.js";
 import { handleWeekComment } from "../utils/prWeeks.js";
-import { validateOrganization, hasMaintenanceLabel } from "../utils/validation.js";
+import { validateOrganization, isSolutionPR } from "../utils/validation.js";
 import { ALLOWED_REPO } from "../utils/constants.js";
 
 /**
@@ -55,11 +55,10 @@ export async function checkWeeks(request, env) {
     // 각 PR 검사
     for (const pr of prs) {
       const prNumber = pr.number;
-      const labels = pr.labels.map((l) => l.name);
 
-      // maintenance 라벨이 있으면 스킵
-      if (hasMaintenanceLabel(labels)) {
-        console.log(`Skipping PR #${prNumber}: has maintenance label`);
+      // 풀이 제출 PR이 아니면 스킵
+      if (!isSolutionPR(pr.title)) {
+        console.log(`Skipping PR #${prNumber}: not a solution PR`);
         continue;
       }
 
