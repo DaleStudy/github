@@ -5,10 +5,13 @@
 import { generateGitHubAppToken, getGitHubHeaders } from "./github.js";
 
 /**
- * PR의 프로젝트 필드 값 조회 (Week, Status 등)
- * @returns {Promise<{week: string|null, status: string|null}>}
+ * PR의 프로젝트 필드 값(Week, Status)과 CI 롤업 상태 조회
+ *
+ * 자동 승인·병합이 세 값을 모두 보므로 한 번의 GraphQL 호출로 묶는다.
+ *
+ * @returns {Promise<{week: string|null, status: string|null, checkState: string|null}>}
  */
-export async function getProjectFields(repoOwner, repoName, prNumber, appToken) {
+export async function getPrFields(repoOwner, repoName, prNumber, appToken) {
   const query = `
     query {
       repository(owner: "${repoOwner}", name: "${repoName}") {
@@ -38,6 +41,15 @@ export async function getProjectFields(repoOwner, repoName, prNumber, appToken) 
               }
             }
           }
+          commits(last: 1) {
+            nodes {
+              commit {
+                statusCheckRollup {
+                  state
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -50,10 +62,15 @@ export async function getProjectFields(repoOwner, repoName, prNumber, appToken) 
   });
 
   const data = await response.json();
-  const projectItems =
-    data.data?.repository?.pullRequest?.projectItems?.nodes || [];
+  const pullRequest = data.data?.repository?.pullRequest;
+  const projectItems = pullRequest?.projectItems?.nodes || [];
 
-  const result = { week: null, status: null };
+  const result = {
+    week: null,
+    status: null,
+    checkState:
+      pullRequest?.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state ?? null,
+  };
 
   for (const item of projectItems) {
     const fieldValues = item.fieldValues?.nodes || [];
@@ -76,15 +93,6 @@ export async function getProjectFields(repoOwner, repoName, prNumber, appToken) 
   }
 
   return result;
-}
-
-/**
- * PR의 Week 값 조회 (GraphQL)
- * @deprecated Use getProjectFields() for better performance
- */
-export async function getWeekValue(repoOwner, repoName, prNumber, appToken) {
-  const fields = await getProjectFields(repoOwner, repoName, prNumber, appToken);
-  return fields.week;
 }
 
 /**
@@ -200,7 +208,7 @@ export async function removeWarningComment(repoOwner, repoName, prNumber, env) {
  * @returns {Promise<string|null>} Week 값 또는 null
  */
 export async function handleWeekComment(repoOwner, repoName, prNumber, env, appToken) {
-  const fields = await getProjectFields(repoOwner, repoName, prNumber, appToken);
+  const fields = await getPrFields(repoOwner, repoName, prNumber, appToken);
   const weekValue = fields.week;
 
   if (!weekValue) {
