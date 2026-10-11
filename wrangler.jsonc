@@ -5,6 +5,8 @@
   "compatibility_flags": ["global_fetch_strictly_public"],
   "account_id": "94480614a6df7731f1e4491bdac5c440",
   "vars": {
+    // GitHub App(dalestudy)의 ID. 공개 값이다.
+    "APP_ID": "1067270",
     "WORKER_URL": "https://github.dalestudy.workers.dev",
   },
   "observability": {

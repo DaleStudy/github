@@ -38,26 +38,11 @@ npm install -g wrangler
 wrangler login
 ```
 
-### 3. Secrets 설정
+### 3. 배포
 
-GitHub App의 credentials를 Worker secrets에 저장:
+`main` 에 머지되면 GitHub Actions(`.github/workflows/deploy.yml`)가 테스트 후 `wrangler deploy --secrets-file` 로 배포한다. Worker secret(`PRIVATE_KEY`, `AI_GATEWAY_TOKEN`, `INTERNAL_SECRET`)은 GitHub secret(`APP_PRIVATE_KEY`, `AI_GATEWAY_TOKEN`, `INTERNAL_SECRET`)에서 배포와 함께 넣으므로 `wrangler secret put` 으로 따로 바꾸지 않는다 — 다음 배포 때 GitHub 값으로 덮인다. `APP_ID` 는 공개 값이라 `wrangler.jsonc` 의 `vars` 에 있다.
 
-```bash
-# APP_ID 설정
-wrangler secret put APP_ID
-# 프롬프트에서 GitHub App ID 입력
-
-# PRIVATE_KEY 설정
-wrangler secret put PRIVATE_KEY
-# 프롬프트에서 GitHub App Private Key 전체 내용 입력
-# (-----BEGIN RSA PRIVATE KEY----- 부터 -----END RSA PRIVATE KEY----- 까지)
-```
-
-### 4. Worker 배포
-
-```bash
-wrangler deploy
-```
+수동으로 배포해야 할 때만 `wrangler deploy` 를 쓴다.
 
 배포 완료 후 Custom Domain을 통해 접근 가능합니다:
 
@@ -256,7 +241,7 @@ GitHub App credentials 확인:
 wrangler secret list
 ```
 
-APP_ID와 PRIVATE_KEY가 모두 설정되어 있어야 합니다.
+`APP_ID`(`wrangler.jsonc`)와 `PRIVATE_KEY`(GitHub secret `APP_PRIVATE_KEY`)가 모두 있어야 합니다.
 
 ### Worker가 403 에러 반환
 

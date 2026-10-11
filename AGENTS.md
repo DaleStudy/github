@@ -95,12 +95,8 @@ curl -X POST http://localhost:8787/check-weeks \
 ### 배포
 
 ```bash
-# Worker 배포
+# Worker 수동 배포 (보통은 main 머지 시 GitHub Actions 가 한다)
 wrangler deploy
-
-# Secrets 설정
-wrangler secret put APP_ID        # GitHub App ID (숫자)
-wrangler secret put PRIVATE_KEY   # GitHub App Private Key (PEM 전체)
 
 # Secrets 확인
 wrangler secret list
@@ -316,12 +312,9 @@ GitHub webhook
 
 **절대 커밋 금지**: `.env`, `.dev.vars`, `*.pem`, `*.key`
 
-#### Cloudflare Workers Secrets (프로덕션)
+#### Secrets (프로덕션)
 
-```bash
-wrangler secret put APP_ID        # GitHub App ID
-wrangler secret put PRIVATE_KEY   # GitHub App Private Key (PEM)
-```
+`main` 에 머지되면 GitHub Actions(`.github/workflows/deploy.yml`)가 테스트 후 `wrangler deploy --secrets-file` 로 배포한다. Worker secret(`PRIVATE_KEY`, `AI_GATEWAY_TOKEN`, `INTERNAL_SECRET`)은 GitHub secret(`APP_PRIVATE_KEY`, `AI_GATEWAY_TOKEN`, `INTERNAL_SECRET`)에서 배포와 함께 넣으므로 `wrangler secret put` 으로 따로 바꾸지 않는다 — 다음 배포 때 GitHub 값으로 덮인다. `APP_ID` 는 공개 값이라 `wrangler.jsonc` 의 `vars` 에 있다.
 
 #### 로컬 개발 (.dev.vars)
 
@@ -334,16 +327,13 @@ PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
 
 ### Cloudflare Workers
 
-```bash
-wrangler deploy
-```
+`main` 에 머지되면 GitHub Actions 가 배포한다. 시크릿은 위 "Secrets (프로덕션)" 참고.
 
 ### 커스텀 도메인
 
 - Production: https://github.dalestudy.com
 - Worker.dev: https://github.dalestudy.workers.dev
 
-자세한 배포 가이드는 `DEPLOYMENT.md` 참고.
 
 ## GitHub App Webhook 설정
 
@@ -377,19 +367,12 @@ https://github.com/settings/apps/dalestudy
 
 ### 4. Worker Secrets 설정
 
-```bash
-# AI Gateway 인증 토큰 (AI 코드 리뷰용, 필수)
-wrangler secret put AI_GATEWAY_TOKEN
+GitHub secret 에 넣으면 배포할 때 Worker 로 들어간다 (`.github/workflows/deploy.yml`).
 
-# Webhook Secret (선택사항)
-wrangler secret put WEBHOOK_SECRET
-
-# Internal Dispatch Secret (AI 핸들러 Worker 분리용, 권장)
-# 설정하면 tagPatterns, learningStatus가 별도 Worker 호출로
-# 디스패치되어 각각 독립적인 subrequest 예산을 가짐.
-# WORKER_URL과 함께 설정되어야 활성화된다.
-wrangler secret put INTERNAL_SECRET
-```
+- `APP_PRIVATE_KEY` (org secret): GitHub App Private Key → Worker `PRIVATE_KEY`
+- `AI_GATEWAY_TOKEN` (org secret): AI Gateway 인증 토큰 (AI 코드 리뷰용, 필수)
+- `INTERNAL_SECRET` (저장소 secret): AI 핸들러 Worker 분리용. 설정하면 tagPatterns, learningStatus가 별도 Worker 호출로 디스패치되어 각각 독립적인 subrequest 예산을 가진다. `WORKER_URL`과 함께 있어야 활성화된다.
+- `WEBHOOK_SECRET` (선택): 설정하면 webhook 서명을 검증한다. 쓰려면 GitHub secret 을 만들고 `deploy.yml` 의 secrets 파일에 추가한다.
 
 `WORKER_URL`은 `wrangler.jsonc`의 `vars`에 정의되어 있어 기본 배포에는 추가 설정이 필요 없다. 스테이징/다른 계정 등으로 배포할 때만 덮어쓰면 된다.
 
