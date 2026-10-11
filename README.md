@@ -43,3 +43,9 @@
     <img src="https://raw.githubusercontent.com/DaleStudy/.github/main/sponsorkit/sponsors.svg" alt="Sponsors" />
   </a>
 </p>
+
+## 라이선스 (License)
+
+이 저장소의 소스 코드는 [MIT 라이선스](LICENSE)를 따릅니다.
+
+다만 달레 스터디의 이름과 로고를 비롯한 브랜드 자산은 라이선스 범위에 포함되지 않습니다.
