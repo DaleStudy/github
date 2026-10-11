@@ -1,254 +1,45 @@
-# DaleStudy GitHub App
-
-DaleStudy 조직의 자동화 작업을 처리하는 GitHub App (https://github.com/apps/dalestudy)
-
-## 프로젝트 비전
-
-DaleStudy 조직의 여러 repository에서 반복적인 작업들을 자동화하는 확장 가능한 플랫폼입니다.
-
-## 현재 구현된 기능
-
-### 1. PR Week 설정 자동 검사 (리트코드 스터디)
-
-Fork PR에서도 작동하도록 GitHub Projects v2의 Week 필드를 조회하고, Week 설정이 누락된 PR에 자동으로 경고 댓글을 작성합니다.
-
-**트리거 방식:**
-- **실시간**: GitHub Organization Webhook (Week 설정 변경 즉시 반응)
-- **수동**: REST API 직접 호출
-
-**대상**: https://github.com/DaleStudy/leetcode-study
-
-**설정 가이드**: `AGENTS.md`의 "GitHub Organization Webhook 설정" 섹션 참고
-
-## 향후 확장 계획
-
-단일 Worker에 여러 엔드포인트를 추가하여 다양한 자동화 요구사항을 처리할 예정입니다.
-
-## 배포 방법
-
-### 1. Cloudflare 계정 설정
-
-1. https://dash.cloudflare.com 회원가입
-2. Workers 섹션으로 이동
-
-### 2. Wrangler CLI 설치
-
-```bash
-npm install -g wrangler
-wrangler login
-```
-
-### 3. 배포
-
-`main` 에 머지되면 GitHub Actions(`.github/workflows/deploy.yml`)가 테스트 후 `wrangler deploy --secrets-file` 로 배포한다. Worker secret(`PRIVATE_KEY`, `AI_GATEWAY_TOKEN`, `INTERNAL_SECRET`)은 GitHub secret(`APP_PRIVATE_KEY`, `AI_GATEWAY_TOKEN`, `INTERNAL_SECRET`)에서 배포와 함께 넣으므로 `wrangler secret put` 으로 따로 바꾸지 않는다 — 다음 배포 때 GitHub 값으로 덮인다. `APP_ID` 는 공개 값이라 `wrangler.jsonc` 의 `vars` 에 있다.
-
-수동으로 배포해야 할 때만 `wrangler deploy` 를 쓴다.
-
-배포 완료 후 Custom Domain을 통해 접근 가능합니다:
-
-```
-https://github.dalestudy.com
-```
-
-## API 엔드포인트
-
-**Base URL**: https://github.dalestudy.com
-
-### `POST /check-weeks`
-
-모든 Open PR에서 Week 설정을 검사하고 자동으로 댓글 작성/삭제
-
-**Request:**
-
-요청 바디에서 `repo_owner`를 생략하면 자동으로 `DaleStudy`가 사용됩니다.
-
-```json
-{
-  "repo_name": "leetcode-study"
-}
-```
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "total_prs": 3,
-  "checked": 3,
-  "commented": 1,
-  "deleted": 1,
-  "results": [
-    { "pr": 1970, "week": null, "commented": true },
-    { "pr": 1969, "week": "Week 8", "commented": false, "deleted": true }
-  ]
-}
-```
-
-### `POST /approve-prs`
-
-열려있는 답안 제출 PR을 일괄 승인합니다. `excludes` 배열을 사용해 특정 PR 번호를 제외할 수 있습니다. 이미 승인되었거나 Draft/`maintenance` 라벨이 붙은 PR은 자동으로 스킵됩니다.
-
-**Request:**
-
-```json
-{ "repo_name": "leetcode-study", "excludes": [1972] }
-```
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "action": "approve",
-  "repo": "DaleStudy/leetcode-study",
-  "total_open_prs": 5,
-  "processed": 2,
-  "approved": 2,
-  "skipped": 0,
-  "results": [
-    { "pr": 1970, "title": "week8 solutions", "approved": true },
-    { "pr": 1971, "title": "week8 extras", "approved": true }
-  ]
-}
-```
-
-### `POST /merge-prs`
-
-열려있는 PR을 일괄 병합합니다. 기본 병합 방식은 `squash`이며, `merge_method`로 `merge | squash | rebase` 중 선택할 수 있습니다. `excludes` 배열로 특정 PR을 제외할 수 있습니다. 최소 1개의 승인 리뷰가 없거나 Draft/`maintenance` 라벨이 붙은 PR은 스킵되며, GitHub에서 `mergeable_state === "clean"`인 PR만 병합됩니다(`behind`, `dirty`, `unknown` 등은 스킵). `unknown`/`behind` 상태는 최대 1초 후 한 차례 재확인합니다.
-
-**Request:**
-
-```json
-{
-  "repo_name": "leetcode-study",
-  "excludes": [1972],
-  "merge_method": "squash"
-}
-```
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "action": "merge",
-  "repo": "DaleStudy/leetcode-study",
-  "merge_method": "squash",
-  "total_open_prs": 5,
-  "processed": 2,
-  "merged": 2,
-  "skipped": 0,
-  "results": [
-    { "pr": 1970, "title": "week8 solutions", "merged": true, "sha": "abc123" },
-    { "pr": 1971, "title": "week8 extras", "merged": true, "sha": "def456" }
-  ]
-}
-```
-
-## 개발 및 테스트
-
-### 로컬 개발
-
-```bash
-# 개발 서버 시작
-wrangler dev
-
-# 로컬 엔드포인트 호출 (별도 터미널)
-curl -X POST http://localhost:8787/check-weeks \
-  -H "Content-Type: application/json" \
-  -d '{"repo_owner": "DaleStudy", "repo_name": "leetcode-study"}'
-```
-
-### 테스트 코드 실행
-
-이 프로젝트는 **Cloudflare Workers Vitest integration**을 사용합니다. 테스트는 Vitest로 실행하고, Worker 런타임과 바인딩이 필요한 테스트는 Cloudflare 테스트 도구를 사용합니다.
-
-```bash
-# 의존성 설치
-bun install
-
-# 전체 테스트 실행
-bun run test
-
-# 감시 모드
-bun run test:watch
-
-# 특정 파일만 실행
-bun run test -- handlers/webhooks.test.js
-```
-
-테스트는 세 디렉토리로 나뉘어 있습니다:
-
-- `handlers/*.test.js`: 핸들러 단위 테스트
-- `utils/*.test.js`: 유틸리티 단위 테스트
-- `tests/*.test.js`: Worker runtime smoke test와 교차 모듈 테스트
-
-모듈 모킹은 Vitest의 `vi.mock()`을 사용합니다. Worker runtime과 bindings가 필요한 테스트는 `cloudflare:test`와 `cloudflare:workers`를 사용합니다.
-
-자세한 작성 규칙과 예제는 `AGENTS.md`의 "테스트" 섹션을 참고하세요.
-
-모든 Pull Request와 `main` 브랜치 푸시에서 `.github/workflows/integration.yaml`이 `bun install` 다음 `bun run test`를 실행합니다.
-
-### 프로덕션 엔드포인트 호출
-
-```bash
-curl -X POST https://github.dalestudy.com/check-weeks \
-  -H "Content-Type: application/json" \
-  -d '{"repo_owner": "DaleStudy", "repo_name": "leetcode-study"}'
-```
-
-### 로그 확인
-
-```bash
-wrangler tail
-```
-
-## 보안
-
-- DaleStudy organization만 허용
-- CORS 헤더 설정 (모든 origin 허용)
-- GitHub App credentials는 Worker secrets에 안전하게 저장
-- Rate limiting은 Cloudflare에서 자동 처리
-
-## 비용
-
-Cloudflare Workers 무료 티어:
-
-- 100,000 requests/day
-- 10ms CPU time per request
-
-리트코드 스터디 PR 수준이면 무료 티어로 충분합니다.
-
-## 새 기능 추가하기
-
-새로운 자동화 기능을 추가하려면:
-
-1. `index.js`에 새 엔드포인트 라우팅 추가
-2. 핸들러 함수 구현 (기존 `handleCheckAllPrs` 참고)
-3. GitHub App 권한 확인 및 필요시 추가
-4. 문서(AGENTS.md, README.md) 업데이트
-5. 로컬 테스트 후 배포 (`wrangler deploy`)
-
-자세한 가이드는 `AGENTS.md`를 참고하세요.
-
-## 문제 해결
-
-### Worker가 401 에러 반환
-
-GitHub App credentials 확인:
-
-```bash
-wrangler secret list
-```
-
-`APP_ID`(`wrangler.jsonc`)와 `PRIVATE_KEY`(GitHub secret `APP_PRIVATE_KEY`)가 모두 있어야 합니다.
-
-### Worker가 403 에러 반환
-
-DaleStudy organization이 아닌 경우 차단됩니다.
-
-## 관련 문서
-
-- **AGENTS.md**: AI 에이전트를 위한 상세 가이드 (개발자도 필독!)
-- **DEPLOYMENT.md**: 처음부터 배포하는 전체 가이드
-- **GitHub App**: https://github.com/organizations/DaleStudy/settings/apps/dalestudy
+# github
+
+[![All Contributors](https://img.shields.io/github/all-contributors/DaleStudy/github?color=ee8449&style=flat-square)](#contributors)
+
+달레 스터디 조직의 [GitHub App](https://github.com/apps/dalestudy)이 받는 웹훅과 자동화 요청을 처리하는 Cloudflare Worker. 리트코드 스터디의 Week 설정 검사, 풀이 PR 일괄 승인·병합, AI 코드 리뷰를 맡고 있습니다.
+
+개발에 필요한 내용은 [AGENTS.md](AGENTS.md)에 있습니다.
+
+## 기여 (Contribution)
+
+본 프로젝트는 [All Contributors](https://github.com/all-contributors/all-contributors) 관례에 따라 기여자분들의 공헌을 인정하고 감사를 표현하고 있습니다.
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://daleseo.com"><img src="https://avatars.githubusercontent.com/u/5466341?v=4?s=100" width="100px;" alt="Dale Seo"/><br /><sub><b>Dale Seo</b></sub></a><br /><a href="https://github.com/DaleStudy/github/commits?author=DaleSeo" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://soobing.github.io/"><img src="https://avatars.githubusercontent.com/u/16860535?v=4?s=100" width="100px;" alt="Soobin Bak"/><br /><sub><b>Soobin Bak</b></sub></a><br /><a href="https://github.com/DaleStudy/github/commits?author=soobing" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://blog.evanshlee.com"><img src="https://avatars.githubusercontent.com/u/37020415?v=4?s=100" width="100px;" alt="Evan Suhyeong Lee"/><br /><sub><b>Evan Suhyeong Lee</b></sub></a><br /><a href="https://github.com/DaleStudy/github/commits?author=sounmind" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/devchanki"><img src="https://avatars.githubusercontent.com/u/31515116?v=4?s=100" width="100px;" alt="Gichan Kim"/><br /><sub><b>Gichan Kim</b></sub></a><br /><a href="https://github.com/DaleStudy/github/commits?author=devchanki" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://lkhoony.notion.site/Front-End-1a3f0e5e085480668ba0ebc54986f6bc"><img src="https://avatars.githubusercontent.com/u/66773320?v=4?s=100" width="100px;" alt="KwangHun Lee"/><br /><sub><b>KwangHun Lee</b></sub></a><br /><a href="https://github.com/DaleStudy/github/commits?author=lkhoony" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/parkhojeong"><img src="https://avatars.githubusercontent.com/u/34734102?v=4?s=100" width="100px;" alt="Hojeong Park"/><br /><sub><b>Hojeong Park</b></sub></a><br /><a href="https://github.com/DaleStudy/github/commits?author=parkhojeong" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/jylee2033"><img src="https://avatars.githubusercontent.com/u/85793553?v=4?s=100" width="100px;" alt="Jooyoung Julia Lee"/><br /><sub><b>Jooyoung Julia Lee</b></sub></a><br /><a href="https://github.com/DaleStudy/github/commits?author=jylee2033" title="Code">💻</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+## 응원 (Support)
+
+달레 스터디로 부터 받은 도움을 후원을 통해서 더 많은 분들에게 나눠주세요. 💝
+후원은 달레 스터디가 커뮤니티로서 지속 가능할 수 있는 중요한 기반이 됩니다. 🙏
+저장소에 스타를 주시는 것도 더 많은 분들이 저희 커뮤니티를 찾는데 도움이 됩니다. ⭐
+
+<p align="center">
+  <a href="https://github.com/sponsors/DaleStudy">
+    <img src="https://raw.githubusercontent.com/DaleStudy/.github/main/sponsorkit/sponsors.svg" alt="Sponsors" />
+  </a>
+</p>

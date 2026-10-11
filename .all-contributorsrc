@@ -1,0 +1,77 @@
+{
+  "projectName": "github",
+  "projectOwner": "DaleStudy",
+  "commit": true,
+  "repoType": "github",
+  "commitConvention": "angular",
+  "contributors": [
+    {
+      "login": "DaleSeo",
+      "name": "Dale Seo",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5466341?v=4",
+      "profile": "https://daleseo.com",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "soobing",
+      "name": "Soobin Bak",
+      "avatar_url": "https://avatars.githubusercontent.com/u/16860535?v=4",
+      "profile": "https://soobing.github.io/",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "sounmind",
+      "name": "Evan Suhyeong Lee",
+      "avatar_url": "https://avatars.githubusercontent.com/u/37020415?v=4",
+      "profile": "https://blog.evanshlee.com",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "devchanki",
+      "name": "Gichan Kim",
+      "avatar_url": "https://avatars.githubusercontent.com/u/31515116?v=4",
+      "profile": "https://github.com/devchanki",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "lkhoony",
+      "name": "KwangHun Lee",
+      "avatar_url": "https://avatars.githubusercontent.com/u/66773320?v=4",
+      "profile": "https://lkhoony.notion.site/Front-End-1a3f0e5e085480668ba0ebc54986f6bc",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "parkhojeong",
+      "name": "Hojeong Park",
+      "avatar_url": "https://avatars.githubusercontent.com/u/34734102?v=4",
+      "profile": "https://github.com/parkhojeong",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "jylee2033",
+      "name": "Jooyoung Julia Lee",
+      "avatar_url": "https://avatars.githubusercontent.com/u/85793553?v=4",
+      "profile": "https://github.com/jylee2033",
+      "contributions": [
+        "code"
+      ]
+    }
+  ],
+  "contributorsPerLine": 7,
+  "linkToUsage": false,
+  "files": [
+    "README.md"
+  ]
+}
