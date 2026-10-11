@@ -37,18 +37,21 @@ export default {
       const signature = request.headers.get("X-Hub-Signature-256");
       const rawBody = await request.text();
 
-      // Secret이 설정되어 있으면 검증
-      if (env.WEBHOOK_SECRET) {
-        const isValid = await verifyWebhookSignature(
-          rawBody,
-          signature,
-          env.WEBHOOK_SECRET
-        );
+      // Secret이 없으면 서명을 검증할 수 없으므로 받지 않는다
+      if (!env.WEBHOOK_SECRET) {
+        console.error("WEBHOOK_SECRET is not configured");
+        return errorResponse("Webhook secret is not configured", 500);
+      }
 
-        if (!isValid) {
-          console.error("Invalid webhook signature");
-          return errorResponse("Invalid signature", 401);
-        }
+      const isValid = await verifyWebhookSignature(
+        rawBody,
+        signature,
+        env.WEBHOOK_SECRET
+      );
+
+      if (!isValid) {
+        console.error("Invalid webhook signature");
+        return errorResponse("Invalid signature", 401);
       }
 
       // Request 객체 재생성 (body를 다시 읽을 수 있도록)

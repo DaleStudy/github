@@ -75,13 +75,13 @@ GitHub webhook
 
 `main` 에 머지되면 GitHub Actions(`.github/workflows/deploy.yml`)가 테스트 후 `wrangler deploy --secrets-file` 로 배포한다. PR 에서는 `integration.yaml` 이 테스트만 돈다. 웹훅을 받는 서버라 PR 미리보기는 두지 않는다.
 
-| Worker 에서 읽는 이름  | 어디서 오나                                                 |
-| ---------------------- | ----------------------------------------------------------- |
-| `APP_ID`, `WORKER_URL` | `wrangler.jsonc` 의 `vars` (공개 값)                        |
-| `PRIVATE_KEY`          | GitHub org secret `APP_PRIVATE_KEY`                         |
-| `AI_GATEWAY_TOKEN`     | GitHub org secret `AI_GATEWAY_TOKEN`                        |
-| `INTERNAL_SECRET`      | GitHub 저장소 secret `INTERNAL_SECRET`                      |
-| `WEBHOOK_SECRET`       | (선택) 있으면 웹훅 서명을 검증한다. 지금은 설정돼 있지 않다 |
+| Worker 에서 읽는 이름  | 어디서 오나                                                                         |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| `APP_ID`, `WORKER_URL` | `wrangler.jsonc` 의 `vars` (공개 값)                                                |
+| `PRIVATE_KEY`          | GitHub org secret `APP_PRIVATE_KEY`                                                 |
+| `AI_GATEWAY_TOKEN`     | GitHub org secret `AI_GATEWAY_TOKEN`                                                |
+| `INTERNAL_SECRET`      | GitHub 저장소 secret `INTERNAL_SECRET`                                              |
+| `WEBHOOK_SECRET`       | GitHub 저장소 secret `WEBHOOK_SECRET`. GitHub App 웹훅 설정의 secret 과 같은 값이다 |
 
 GitHub secret 은 배포할 때마다 Worker secret 으로 들어가므로 `wrangler secret put` 으로 따로 바꾸지 않는다. 다음 배포 때 GitHub 값으로 덮인다.
 로컬에서는 `.dev.vars` 에 같은 이름으로 넣는다. `.dev.vars`, `*.pem` 은 커밋하지 않는다.
@@ -90,7 +90,7 @@ GitHub secret 은 배포할 때마다 Worker secret 으로 들어가므로 `wran
 
 https://github.com/organizations/DaleStudy/settings/apps/dalestudy
 
-- Webhook URL: `https://github.dalestudy.com/webhooks`
+- Webhook URL: `https://github.dalestudy.com/webhooks`, Webhook secret 은 저장소 secret `WEBHOOK_SECRET` 과 같은 값. `/webhooks` 는 서명(`X-Hub-Signature-256`)이 맞지 않거나 `WEBHOOK_SECRET` 이 없으면 받지 않는다
 - Repository permissions: Contents(Read), Issues(Read & write), Metadata(Read), Pull requests(Read & write), Projects(Read & write)
 - 이벤트: Issue comments, Pull request review comments, Projects v2 item, Pull requests
 - DaleStudy 조직에 설치돼 있고 leetcode-study 에 접근할 수 있어야 한다
