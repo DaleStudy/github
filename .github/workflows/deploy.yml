@@ -24,19 +24,18 @@ jobs:
       - run: bun run test
 
       # PRIVATE_KEY 는 여러 줄짜리 PEM 이라 JSON 으로 쓴다
-      - name: Write secrets file
-        env:
-          PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
-          AI_GATEWAY_TOKEN: ${{ secrets.AI_GATEWAY_TOKEN }}
-          INTERNAL_SECRET: ${{ secrets.INTERNAL_SECRET }}
-          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
-        run: |
-          jq -n --arg private_key "$PRIVATE_KEY" --arg ai "$AI_GATEWAY_TOKEN" --arg internal "$INTERNAL_SECRET" --arg webhook "$WEBHOOK_SECRET" \
-            '{PRIVATE_KEY: $private_key, AI_GATEWAY_TOKEN: $ai, INTERNAL_SECRET: $internal, WEBHOOK_SECRET: $webhook}' > "$RUNNER_TEMP/secrets.json"
-
       - name: Deploy
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           packageManager: bun
-          command: deploy --secrets-file ${{ runner.temp }}/secrets.json
+          secrets: |
+            PRIVATE_KEY
+            AI_GATEWAY_TOKEN
+            INTERNAL_SECRET
+            WEBHOOK_SECRET
+        env:
+          PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+          AI_GATEWAY_TOKEN: ${{ secrets.AI_GATEWAY_TOKEN }}
+          INTERNAL_SECRET: ${{ secrets.INTERNAL_SECRET }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}

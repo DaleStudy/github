@@ -73,7 +73,7 @@ GitHub webhook
 
 ## 배포와 시크릿
 
-`main` 에 머지되면 GitHub Actions(`.github/workflows/deploy.yml`)가 테스트 후 `wrangler deploy --secrets-file` 로 배포한다. PR 에서는 `integration.yaml` 이 테스트만 돈다. 웹훅을 받는 서버라 PR 미리보기는 두지 않는다.
+`main` 에 머지되면 GitHub Actions(`.github/workflows/deploy.yml`)가 테스트 후 GitHub secret 을 Worker secret 으로 넣으며 배포한다. PR 에서는 `integration.yaml` 이 테스트만 돈다. 웹훅을 받는 서버라 PR 미리보기는 두지 않는다.
 
 | Worker 에서 읽는 이름  | 어디서 오나                                                                         |
 | ---------------------- | ----------------------------------------------------------------------------------- |
