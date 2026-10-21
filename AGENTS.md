@@ -112,3 +112,12 @@ vi.mock("../utils/github.js", () => ({
 - **댓글 숨김 마커(`<!-- xxx-data: ... -->`)의 직렬화 형식을 바꿀 때는** 정규식, 문서 주석, 테스트를 같은 PR 에서 함께 고친다. 파싱이 빈 값으로 fallback 하면 회귀가 조용히 묻힌다.
 - 응답에는 CORS 헤더(`Access-Control-Allow-Origin: *`)가 붙고, 에러는 500 으로 돌려준다. 원인은 `wrangler tail` 로 본다.
 - 401 이 나면 `APP_ID` 와 `PRIVATE_KEY` 가 같은 App 의 것인지 확인한다.
+
+## Code Review Rules
+
+- Node.js 내장 모듈이나 Octokit 같은 Workers 런타임에서 동작하지 않는 패키지를 쓰면 지적한다.
+- GraphQL 쿼리에 문자열로 끼워 넣는 값은 반드시 검증되어야 한다. 사용자 입력(PR 제목, 댓글 등)이 검증 없이 들어가면 심각한 문제로 지적한다.
+- 새 엔드포인트는 기존처럼 `repo_owner`가 `DaleStudy`가 아니면 403을 돌려야 하고, `/internal/*`는 `X-Internal-Secret`을 검사해야 한다.
+- `tagPatterns`나 `postLearningStatus`에 fetch가 늘어나면 `tests/subrequest-budget.test.js`의 고정값도 함께 갱신되어야 한다.
+- 댓글 숨김 마커(`<!-- xxx-data: ... -->`) 형식을 바꾸면 파싱 정규식과 테스트도 같은 PR에서 바뀌어야 한다.
+- 새 시크릿을 `wrangler secret put` 전제로 추가하면 지적한다. 시크릿은 GitHub secret으로 두고 배포 워크플로가 넣는다.
