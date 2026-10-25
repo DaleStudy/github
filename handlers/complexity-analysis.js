@@ -1,7 +1,7 @@
 /**
  * 시간/공간 복잡도 분석 (분석 함수 + 순수 헬퍼).
  *
- * 오케스트레이션과 댓글 게시는 tag-patterns 핸들러가 담당하며, 이 모듈은
+ * 오케스트레이션과 check run 게시는 tag-patterns 핸들러가 담당하며, 이 모듈은
  * OpenAI 호출(`callComplexityAnalysis`)과 사용자 주석 처리/매칭 헬퍼,
  * 한 파일분 섹션 렌더러(`renderComplexitySection`)만 제공한다.
  *
@@ -353,7 +353,7 @@ function buildSolutionBody(solution) {
 
 /**
  * 한 파일분 복잡도 섹션을 렌더링한다.
- * 패턴 태그 코멘트에 묻어가는 형태이므로 마커/푸터 없이
+ * check run 의 파일별 섹션에 묻어가는 형태이므로 마커/푸터 없이
  * `### 📊 ...` 헤더부터 시작한다.
  *
  * @param {{problemName: string, solutions: Array}} entry

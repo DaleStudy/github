@@ -5,7 +5,7 @@ vi.mock("../utils/github.js", () => ({
 }));
 
 vi.mock("./tag-patterns.js", () => ({
-  tagPatterns: vi.fn().mockResolvedValue({ tagged: true }),
+  tagPatterns: vi.fn().mockResolvedValue({ analyzed: 1 }),
 }));
 
 vi.mock("./learning-status.js", () => ({

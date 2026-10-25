@@ -1,36 +1,33 @@
 /**
- * 알고리즘 패턴 태깅 핸들러
+ * AI 풀이 분석 핸들러
  *
- * PR의 솔루션 파일들을 분석하여 사용된 알고리즘 패턴 + 시간/공간 복잡도를
- * 파일별 review comment로 남긴다. 복잡도 분석은 패턴 분석 루프와 병렬로
- * OpenAI 1콜에서 모든 파일을 한 번에 처리하고, 그 결과를 파일별 댓글
- * 본문에 한 섹션 더 붙이는 형태로 묻어간다.
- * 재실행 시 기존 패턴 댓글과 답글은 보존하고, 변경된 파일에 새 분석 댓글을 추가한다.
+ * PR의 솔루션 파일들을 분석하여 알고리즘 패턴 + 시간/공간 복잡도를
+ * PR head 커밋의 check run 하나로 남긴다. 사람 리뷰와 섞이지 않도록 리뷰 댓글은
+ * 달지 않고, 대화 탭에는 check run 링크 댓글 하나만 유지한다.
+ * 복잡도 분석은 패턴 분석 루프와 병렬로 OpenAI 1콜에서 모든 파일을 한 번에 처리한다.
  *
  * 주의: Workers Free 플랜의 외부 subrequest 한도는 invocation당 50회이므로 준수해야 한다.
  * @see https://developers.cloudflare.com/workers/platform/limits/#subrequests
  */
 
-import {
-  parseFileShaMarker,
-  renderFileShaMarker,
-} from "../utils/commentMarker.js";
 import { getGitHubHeaders } from "../utils/github.js";
-import { createCodeFence } from "../utils/markdown.js";
 import { generatePatternAnalysis } from "../utils/openai.js";
 import {
   callComplexityAnalysis,
   renderComplexitySection,
 } from "./complexity-analysis.js";
 
-const COMMENT_MARKER = "<!-- dalestudy-pattern-tag -->";
-// 레거시 단독 복잡도 issue comment 식별용. 새 합본 댓글에는 박지 않는다.
+const CHECK_RUN_NAME = "AI 풀이 분석";
+const LINK_COMMENT_MARKER = "<!-- dalestudy-ai-analysis-link -->";
+// 레거시 단독 복잡도 issue comment 식별용
 const LEGACY_COMPLEXITY_MARKER = "<!-- dalestudy-complexity-analysis -->";
 const SOLUTION_PATH_REGEX = /^[^/]+\/[^/]+\.[^.]+$/;
 const MAX_FILE_CONTENT_LENGTH = 20000; // OpenAI 입력 크기 안전장치
+// check run output.summary / output.text 의 최대 길이
+const MAX_CHECK_RUN_OUTPUT_LENGTH = 65535;
 
 /**
- * PR의 솔루션 파일들에 알고리즘 패턴 태그 달기
+ * PR의 솔루션 파일들을 분석해 check run 으로 게시하기
  *
  * @param {string} repoOwner
  * @param {string} repoName
@@ -69,27 +66,11 @@ export async function tagPatterns(
   }
 
   const allFiles = await filesResponse.json();
-  let solutionFiles = allFiles.filter(
+  const solutionFiles = allFiles.filter(
     (f) =>
       (f.status === "added" || f.status === "modified") &&
       SOLUTION_PATH_REGEX.test(f.filename)
   );
-
-  if (solutionFiles.length === 0) {
-    return { skipped: "no-solution-files" };
-  }
-
-  solutionFiles = await getUnanalyzedOrChangedFiles(
-    repoOwner,
-    repoName,
-    prNumber,
-    appToken,
-    solutionFiles
-  );
-
-  if (solutionFiles === null) {
-    return { skipped: "review-comments-unavailable" };
-  }
 
   console.log(
     `[tagPatterns] PR #${prNumber}: ${allFiles.length} total files, ${solutionFiles.length} solution files to analyze`
@@ -102,97 +83,143 @@ export async function tagPatterns(
   // 2-3. 모든 파일 raw 다운로드 (한 번만, 복잡도 분석과 공유)
   const fileEntries = await downloadFileEntries(solutionFiles);
 
-  // 2-4. 복잡도 분석은 1콜이므로 패턴 루프와 병렬 진행. 실패해도 패턴 댓글은 작성.
+  // 2-4. 복잡도 분석은 1콜이므로 패턴 루프와 병렬 진행. 실패해도 패턴 분석은 게시.
   const complexityPromise = callComplexityAnalysis(fileEntries, openaiApiKey)
     .catch((err) => {
       console.error(`[tagPatterns] complexity analysis failed: ${err.message}`);
       return [];
     });
 
-  // 2-5. 파일별 OpenAI 분석 + 코멘트 작성 (각 파일 try/catch 래핑)
-  const results = [];
+  // 2-5. 파일별 OpenAI 패턴 분석 (실패한 파일은 analysis 가 null)
+  const analyses = [];
   for (const fe of fileEntries) {
     try {
-      const result = await tagSingleFile(
-        fe,
-        complexityPromise,
-        repoOwner,
-        repoName,
-        prNumber,
-        headSha,
-        appToken,
+      const analysis = await generatePatternAnalysis(
+        fe.content,
+        fe.problemName,
         openaiApiKey
       );
-      results.push({ path: fe.file.filename, ...result });
+      analyses.push({ fileEntry: fe, analysis });
     } catch (error) {
       console.error(
-        `[tagPatterns] Failed to tag ${fe.file.filename}: ${error.message}`
+        `[tagPatterns] Failed to analyze ${fe.file.filename}: ${error.message}`
       );
-      results.push({ path: fe.file.filename, error: error.message });
+      analyses.push({ fileEntry: fe, analysis: null });
     }
   }
 
-  // 2-6. 마이그레이션: 구버전이 남긴 단독 복잡도 issue comment 가 있으면 삭제
-  await deleteLegacyComplexityIssueComment(
-    repoOwner, repoName, prNumber, appToken
+  const complexityResults = await complexityPromise;
+
+  // 2-6. check run 게시
+  const checkRun = await createCheckRun(
+    repoOwner,
+    repoName,
+    headSha,
+    renderCheckRunOutput(analyses, complexityResults),
+    appToken
   );
 
-  return { tagged: results.filter((r) => !r.error).length, results };
+  // 2-7. 대화 탭의 링크 댓글 갱신 + 레거시 단독 복잡도 issue comment 삭제
+  await syncIssueComments(
+    repoOwner,
+    repoName,
+    prNumber,
+    checkRun.html_url,
+    appToken
+  );
+
+  return {
+    analyzed: analyses.filter((a) => a.analysis !== null).length,
+    checkRunUrl: checkRun.html_url,
+  };
 }
 
 /**
- * 단일 파일 분석 + 코멘트 작성
+ * check run output(title, summary, text)을 렌더링한다.
+ * summary 에는 파일별 패턴 요약표를, text 에는 파일별 상세 분석을 넣는다.
  *
- * @param {{file: object, problemName: string, content: string, isContentTruncated: boolean}} fileEntry
- * @param {Promise<Array>} complexityPromise - 모든 파일의 복잡도 분석 결과 (병렬 진행)
+ * @param {Array<{fileEntry: object, analysis: object|null}>} analyses
+ * @param {Array<{problemName: string, solutions: Array}>} complexityResults
  */
-async function tagSingleFile(
-  fileEntry,
-  complexityPromise,
-  repoOwner,
-  repoName,
-  prNumber,
-  headSha,
-  appToken,
-  openaiApiKey
-) {
-  const {
-    file,
-    problemName,
-    content: fileContent,
-    isContentTruncated,
-  } = fileEntry;
+function renderCheckRunOutput(analyses, complexityResults) {
+  const summaryLines = [
+    "> 🤖 AI가 생성한 분석이라 틀릴 수 있어요. 리뷰어의 피드백을 우선해 주세요.",
+    "",
+    "| 파일 | 패턴 |",
+    "|---|---|",
+    ...analyses.map(
+      ({ fileEntry, analysis }) =>
+        `| \`${fileEntry.file.filename}\` | ${renderPatterns(analysis)} |`
+    ),
+  ];
 
-  // OpenAI 패턴 분석
-  const analysis = await generatePatternAnalysis(
-    fileContent,
-    problemName,
-    openaiApiKey
-  );
+  const text = analyses
+    .map(({ fileEntry, analysis }) =>
+      renderFileSection(
+        fileEntry,
+        analysis,
+        complexityResults.find((r) => r.problemName === fileEntry.problemName)
+      )
+    )
+    .join("\n\n");
 
-  // 코멘트 본문 작성
-  const patternsText =
-    analysis.patterns.length > 0 ? analysis.patterns.join(", ") : "감지된 패턴 없음";
-  let body = `${COMMENT_MARKER}
-${file.sha ? `${renderFileShaMarker(file.sha)}\n` : ""}### 🏷️ 알고리즘 패턴 분석
+  return {
+    title: `풀이 파일 ${analyses.length}개 분석`,
+    summary: truncateOutput(summaryLines.join("\n")),
+    text: truncateOutput(text),
+  };
+}
 
-${renderAnalyzedSource(file.filename, fileContent, isContentTruncated)}
+function renderPatterns(analysis) {
+  if (analysis === null) return "⚠️ 분석 실패";
+  return analysis.patterns.length > 0
+    ? analysis.patterns.join(", ")
+    : "감지된 패턴 없음";
+}
 
-- **패턴**: ${patternsText}
-- **설명**: ${analysis.description || "(설명 없음)"}`;
+function renderFileSection(fileEntry, analysis, complexityForFile) {
+  const lines = [`## \`${fileEntry.file.filename}\``, ""];
 
-  // 복잡도 섹션을 한 블록 더 붙인다 (해당 파일 결과가 있을 때만, 실패 시 스킵)
-  const complexityResults = await complexityPromise;
-  const complexityForFile = complexityResults.find(
-    (r) => r.problemName === problemName
-  );
-  if (complexityForFile && complexityForFile.solutions.length > 0) {
-    body += "\n\n" + renderComplexitySection(complexityForFile);
+  if (fileEntry.isContentTruncated) {
+    lines.push(
+      `> ⚠️ 파일이 길어 앞부분 ${MAX_FILE_CONTENT_LENGTH}자만 분석했습니다.`,
+      ""
+    );
   }
 
-  // 파일 단위 review comment 작성
-  const commentResponse = await fetch(
-    `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/comments`,
+  lines.push("### 🏷️ 알고리즘 패턴 분석", "");
+  if (analysis === null) {
+    lines.push("> ⚠️ 패턴 분석에 실패했습니다.");
+  } else {
+    lines.push(
+      `- **패턴**: ${renderPatterns(analysis)}`,
+      `- **설명**: ${analysis.description || "(설명 없음)"}`
+    );
+  }
+
+  // 복잡도 섹션은 해당 파일 결과가 있을 때만 붙인다
+  if (complexityForFile && complexityForFile.solutions.length > 0) {
+    lines.push("", renderComplexitySection(complexityForFile));
+  }
+
+  return lines.join("\n");
+}
+
+function truncateOutput(value) {
+  const notice = "\n\n... (이하 생략)";
+  if (value.length <= MAX_CHECK_RUN_OUTPUT_LENGTH) return value;
+  return value.slice(0, MAX_CHECK_RUN_OUTPUT_LENGTH - notice.length) + notice;
+}
+
+/**
+ * PR head 커밋에 완료 상태의 check run 을 만든다.
+ * conclusion 은 neutral 이라 statusCheckRollup 을 실패로 만들지 않는다.
+ *
+ * @see https://docs.github.com/en/rest/checks/runs#create-a-check-run
+ */
+async function createCheckRun(repoOwner, repoName, headSha, output, appToken) {
+  const response = await fetch(
+    `https://api.github.com/repos/${repoOwner}/${repoName}/check-runs`,
     {
       method: "POST",
       headers: {
@@ -200,124 +227,23 @@ ${renderAnalyzedSource(file.filename, fileContent, isContentTruncated)}
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        body,
-        commit_id: headSha,
-        path: file.filename,
-        subject_type: "file",
+        name: CHECK_RUN_NAME,
+        head_sha: headSha,
+        status: "completed",
+        conclusion: "neutral",
+        output,
       }),
     }
   );
 
-  if (!commentResponse.ok) {
-    const errorText = await commentResponse.text();
+  if (!response.ok) {
+    const errorText = await response.text();
     throw new Error(
-      `Failed to post review comment: ${commentResponse.status} ${errorText}`
+      `Failed to create check run: ${response.status} ${errorText}`
     );
   }
 
-  return { patterns: analysis.patterns };
-}
-
-function renderAnalyzedSource(filename, content, isContentTruncated) {
-  const language = filename.includes(".") ? filename.split(".").pop() : "";
-  const truncationNotice = isContentTruncated ? "\n... (이하 생략)" : "";
-  const codeFence = createCodeFence(content);
-
-  return `<details>
-<summary>${filename}</summary>
-
-${codeFence}${language}
-${content}${truncationNotice}
-${codeFence}
-
-</details>`;
-}
-
-async function fetchReviewCommentsNewestFirst(
-  repoOwner,
-  repoName,
-  prNumber,
-  appToken
-) {
-  try {
-    const response = await fetch(
-      `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/comments?sort=created&direction=desc&per_page=100`,
-      { headers: getGitHubHeaders(appToken) }
-    );
-
-    if (!response.ok) {
-      throw new Error(`GitHub API responded with ${response.status}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error(
-      `[tagPatterns] Failed to load review comments: ${error.message}`
-    );
-    return null;
-  }
-}
-
-function extractLatestAnalyzedFileShas(commentsNewestFirst) {
-  const latestAnalyzedFileShas = new Map();
-
-  for (const comment of commentsNewestFirst) {
-    const hasLatestAnalysisForFile = latestAnalyzedFileShas.has(comment.path);
-    const isTopLevelComment = comment.in_reply_to_id == null;
-    const isBotPatternAnalysisComment =
-      comment.user?.type === "Bot" &&
-      comment.body?.includes(COMMENT_MARKER);
-
-    if (
-      !hasLatestAnalysisForFile &&
-      isTopLevelComment &&
-      isBotPatternAnalysisComment
-    ) {
-      latestAnalyzedFileShas.set(
-        comment.path,
-        parseFileShaMarker(comment.body)
-      );
-    }
-  }
-
-  return latestAnalyzedFileShas;
-}
-
-/**
- * 이전에 분석하지 않았거나 파일 내용이 변경된 파일만 반환한다.
- * 기존 분석 댓글을 조회하지 못하면 null을 반환한다.
- */
-async function getUnanalyzedOrChangedFiles(
-  repoOwner,
-  repoName,
-  prNumber,
-  appToken,
-  solutionFiles
-) {
-  const reviewCommentsNewestFirst = await fetchReviewCommentsNewestFirst(
-    repoOwner,
-    repoName,
-    prNumber,
-    appToken
-  );
-
-  if (reviewCommentsNewestFirst === null) {
-    return null;
-  }
-
-  const latestAnalyzedFileShas = extractLatestAnalyzedFileShas(
-    reviewCommentsNewestFirst
-  );
-
-  function needsAnalysis(file) {
-    const latestAnalyzedFileSha = latestAnalyzedFileShas.get(file.filename);
-    const isFileShaMissing = file.sha == null;
-    const hasFileChanged = file.sha !== latestAnalyzedFileSha;
-
-    return isFileShaMissing || hasFileChanged;
-  }
-
-  return solutionFiles.filter(needsAnalysis);
+  return response.json();
 }
 
 /**
@@ -352,13 +278,16 @@ async function downloadFileEntries(solutionFiles) {
 }
 
 /**
- * 구버전 단독 복잡도 issue comment 가 있으면 삭제한다 (마이그레이션).
- * 새 코드는 review comment 에 합본으로 작성하므로 단독 issue comment 는 중복.
+ * issue comment 목록을 한 번 읽어 두 가지를 처리한다.
+ *  - 링크 댓글: 봇이 단 것이 있으면 최신 check run 링크로 고치고, 없으면 새로 단다.
+ *  - 레거시 단독 복잡도 issue comment: 있으면 삭제한다 (마이그레이션).
+ * 실패해도 check run 은 이미 게시됐으므로 로그만 남긴다.
  */
-async function deleteLegacyComplexityIssueComment(
+async function syncIssueComments(
   repoOwner,
   repoName,
   prNumber,
+  checkRunUrl,
   appToken
 ) {
   const listResponse = await fetch(
@@ -368,41 +297,90 @@ async function deleteLegacyComplexityIssueComment(
 
   if (!listResponse.ok) {
     console.error(
-      `[tagPatterns] Failed to list issue comments for legacy cleanup: ${listResponse.status}`
+      `[tagPatterns] Failed to list issue comments: ${listResponse.status}`
     );
     return;
   }
 
   const comments = await listResponse.json();
-  const legacy = comments.find(
-    (c) =>
-      c.user?.type === "Bot" && c.body?.includes(LEGACY_COMPLEXITY_MARKER)
+  const findBotComment = (marker) =>
+    comments.find((c) => c.user?.type === "Bot" && c.body?.includes(marker));
+
+  await upsertLinkComment(
+    repoOwner,
+    repoName,
+    prNumber,
+    findBotComment(LINK_COMMENT_MARKER),
+    checkRunUrl,
+    appToken
   );
 
-  if (!legacy) return;
+  const legacy = findBotComment(LEGACY_COMPLEXITY_MARKER);
+  if (legacy) {
+    await deleteIssueComment(repoOwner, repoName, legacy.id, appToken);
+  }
+}
+
+async function upsertLinkComment(
+  repoOwner,
+  repoName,
+  prNumber,
+  existing,
+  checkRunUrl,
+  appToken
+) {
+  const body = `${LINK_COMMENT_MARKER}
+🤖 AI 풀이 분석(알고리즘 패턴, 시간/공간 복잡도) 결과는 [Checks 탭](${checkRunUrl})에서 볼 수 있어요.`;
+
+  const url = existing
+    ? `https://api.github.com/repos/${repoOwner}/${repoName}/issues/comments/${existing.id}`
+    : `https://api.github.com/repos/${repoOwner}/${repoName}/issues/${prNumber}/comments`;
 
   try {
-    const deleteResponse = await fetch(
-      `https://api.github.com/repos/${repoOwner}/${repoName}/issues/comments/${legacy.id}`,
+    const response = await fetch(url, {
+      method: existing ? "PATCH" : "POST",
+      headers: {
+        ...getGitHubHeaders(appToken),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ body }),
+    });
+
+    if (!response.ok) {
+      console.error(
+        `[tagPatterns] Failed to upsert link comment on PR #${prNumber}: ${response.status}`
+      );
+    }
+  } catch (error) {
+    console.error(
+      `[tagPatterns] Error upserting link comment on PR #${prNumber}: ${error.message}`
+    );
+  }
+}
+
+async function deleteIssueComment(repoOwner, repoName, commentId, appToken) {
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${repoOwner}/${repoName}/issues/comments/${commentId}`,
       {
         method: "DELETE",
         headers: getGitHubHeaders(appToken),
       }
     );
 
-    if (!deleteResponse.ok) {
+    if (!response.ok) {
       console.error(
-        `[tagPatterns] Failed to delete legacy complexity comment ${legacy.id}: ${deleteResponse.status}`
+        `[tagPatterns] Failed to delete legacy complexity comment ${commentId}: ${response.status}`
       );
       return;
     }
 
     console.log(
-      `[tagPatterns] Deleted legacy complexity issue comment ${legacy.id} on PR #${prNumber}`
+      `[tagPatterns] Deleted legacy complexity issue comment ${commentId}`
     );
   } catch (error) {
     console.error(
-      `[tagPatterns] Error deleting legacy complexity comment ${legacy.id}: ${error.message}`
+      `[tagPatterns] Error deleting legacy complexity comment ${commentId}: ${error.message}`
     );
   }
 }
