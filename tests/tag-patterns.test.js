@@ -88,6 +88,7 @@ function makeFetchMock({
   complexityFails = false,
   checkRunFails = false,
   existingIssueComments = [],
+  latestHeadSha = HEAD_SHA,
 } = {}) {
   const requests = [];
   const fetchMock = vi.fn().mockImplementation((url, opts) => {
@@ -140,8 +141,13 @@ function makeFetchMock({
       return okJson({ id: 777, html_url: CHECK_RUN_URL });
     }
 
+    if (urlStr.endsWith(`/pulls/${PR_NUMBER}`) && method === "GET") {
+      return okJson({ head: { sha: latestHeadSha } });
+    }
+
     if (urlStr.includes(`/issues/${PR_NUMBER}/comments`) && method === "GET") {
-      return okJson(existingIssueComments);
+      const page = Number(new URL(urlStr).searchParams.get("page"));
+      return okJson(existingIssueComments.slice((page - 1) * 100, page * 100));
     }
 
     if (urlStr.includes(`/issues/${PR_NUMBER}/comments`) && method === "POST") {
@@ -427,6 +433,50 @@ describe("tagPatterns — 대화 탭 링크 댓글", () => {
     expect(commentWrites[0].method).toBe("PATCH");
     expect(commentWrites[0].url).toContain("/issues/comments/321");
     expect(commentWrites[0].body.body).toContain(CHECK_RUN_URL);
+  });
+
+  it("링크 댓글이 두 번째 페이지에 있어도 찾아서 고친다", async () => {
+    const requests = setupFetch({
+      solutionFiles: [makeSolutionFile("two-sum")],
+      existingIssueComments: [
+        ...Array.from({ length: 100 }, (_, i) => ({
+          id: i + 1,
+          user: { type: "User" },
+          body: "리뷰 감사합니다",
+        })),
+        {
+          id: 321,
+          user: { type: "Bot" },
+          body: `${LINK_COMMENT_MARKER}\n이전 링크`,
+        },
+      ],
+    });
+
+    await runTagPatterns();
+
+    const commentWrites = requests.filter((r) => r.url.includes("/issues/"));
+    expect(commentWrites).toHaveLength(1);
+    expect(commentWrites[0].method).toBe("PATCH");
+    expect(commentWrites[0].url).toContain("/issues/comments/321");
+  });
+
+  it("분석 중에 새 커밋이 푸시됐으면 링크 댓글을 건드리지 않는다", async () => {
+    const requests = setupFetch({
+      solutionFiles: [makeSolutionFile("two-sum")],
+      latestHeadSha: "newer-sha",
+      existingIssueComments: [
+        {
+          id: 321,
+          user: { type: "Bot" },
+          body: `${LINK_COMMENT_MARKER}\n최신 링크`,
+        },
+      ],
+    });
+
+    await runTagPatterns();
+
+    expect(findCheckRun(requests).head_sha).toBe(HEAD_SHA);
+    expect(requests.filter((r) => r.url.includes("/issues/"))).toHaveLength(0);
   });
 
   it("사람이 마커를 포함해 단 댓글은 링크 댓글로 보지 않는다", async () => {
