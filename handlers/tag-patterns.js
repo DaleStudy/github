@@ -124,6 +124,7 @@ export async function tagPatterns(
     repoOwner,
     repoName,
     prNumber,
+    headSha,
     checkRun.html_url,
     appToken
   );
@@ -280,6 +281,7 @@ async function downloadFileEntries(solutionFiles) {
 /**
  * issue comment 목록을 한 번 읽어 두 가지를 처리한다.
  *  - 링크 댓글: 봇이 단 것이 있으면 최신 check run 링크로 고치고, 없으면 새로 단다.
+ *    분석 중에 새 커밋이 푸시됐다면 더 늦게 끝난 이전 분석이 최신 링크를 덮지 않도록 건너뛴다.
  *  - 레거시 단독 복잡도 issue comment: 있으면 삭제한다 (마이그레이션).
  * 실패해도 check run 은 이미 게시됐으므로 로그만 남긴다.
  */
@@ -287,38 +289,88 @@ async function syncIssueComments(
   repoOwner,
   repoName,
   prNumber,
+  headSha,
   checkRunUrl,
   appToken
 ) {
-  const listResponse = await fetch(
-    `https://api.github.com/repos/${repoOwner}/${repoName}/issues/${prNumber}/comments?per_page=100`,
-    { headers: getGitHubHeaders(appToken) }
-  );
-
-  if (!listResponse.ok) {
-    console.error(
-      `[tagPatterns] Failed to list issue comments: ${listResponse.status}`
-    );
-    return;
-  }
-
-  const comments = await listResponse.json();
-  const findBotComment = (marker) =>
-    comments.find((c) => c.user?.type === "Bot" && c.body?.includes(marker));
-
-  await upsertLinkComment(
+  const comments = await listIssueComments(
     repoOwner,
     repoName,
     prNumber,
-    findBotComment(LINK_COMMENT_MARKER),
-    checkRunUrl,
     appToken
   );
+  if (comments === null) return;
+
+  const findBotComment = (marker) =>
+    comments.find((c) => c.user?.type === "Bot" && c.body?.includes(marker));
+
+  const latestHeadSha = await getHeadSha(
+    repoOwner,
+    repoName,
+    prNumber,
+    appToken
+  );
+  if (latestHeadSha === headSha) {
+    await upsertLinkComment(
+      repoOwner,
+      repoName,
+      prNumber,
+      findBotComment(LINK_COMMENT_MARKER),
+      checkRunUrl,
+      appToken
+    );
+  } else {
+    console.log(
+      `[tagPatterns] Skipping link comment on PR #${prNumber}: head moved from ${headSha} to ${latestHeadSha}`
+    );
+  }
 
   const legacy = findBotComment(LEGACY_COMPLEXITY_MARKER);
   if (legacy) {
     await deleteIssueComment(repoOwner, repoName, legacy.id, appToken);
   }
+}
+
+/**
+ * PR 의 issue comment 를 모든 페이지에 걸쳐 모은다. 실패하면 null.
+ */
+async function listIssueComments(repoOwner, repoName, prNumber, appToken) {
+  const comments = [];
+  for (let page = 1; ; page++) {
+    const response = await fetch(
+      `https://api.github.com/repos/${repoOwner}/${repoName}/issues/${prNumber}/comments?per_page=100&page=${page}`,
+      { headers: getGitHubHeaders(appToken) }
+    );
+
+    if (!response.ok) {
+      console.error(
+        `[tagPatterns] Failed to list issue comments: ${response.status}`
+      );
+      return null;
+    }
+
+    const batch = await response.json();
+    comments.push(...batch);
+    if (batch.length < 100) return comments;
+  }
+}
+
+/**
+ * PR 의 현재 head 커밋 SHA. 실패하면 null 이라 링크 댓글 갱신을 건너뛴다.
+ */
+async function getHeadSha(repoOwner, repoName, prNumber, appToken) {
+  const response = await fetch(
+    `https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}`,
+    { headers: getGitHubHeaders(appToken) }
+  );
+
+  if (!response.ok) {
+    console.error(`[tagPatterns] Failed to get PR #${prNumber}: ${response.status}`);
+    return null;
+  }
+
+  const pr = await response.json();
+  return pr.head?.sha ?? null;
 }
 
 async function upsertLinkComment(

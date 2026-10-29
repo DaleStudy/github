@@ -69,7 +69,7 @@ GitHub webhook
 ```
 
 `INTERNAL_SECRET` 과 `WORKER_URL` 이 둘 다 있어야 켜진다. 하나라도 없으면 같은 invocation 에서 차례로 실행된다.
-`tests/subrequest-budget.test.js` 가 fetch 횟수(`tagPatterns` 파일 15 개에 36, `postLearningStatus` 파일 5 개에 31)를 회귀 테스트로 고정한다.
+`tests/subrequest-budget.test.js` 가 fetch 횟수(`tagPatterns` 파일 15 개에 37, `postLearningStatus` 파일 5 개에 31)를 회귀 테스트로 고정한다.
 
 ## 배포와 시크릿
 
