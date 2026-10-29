@@ -51,7 +51,7 @@ wrangler.jsonc  Worker 설정과 공개 값(vars)
 | 이벤트                                                     | 하는 일                                                                                      |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `projects_v2_item`                                         | Week 설정이 바뀌면 경고 댓글을 달거나 지운다                                                 |
-| `pull_request` (`opened`, `reopened`, `synchronize`)       | Week 검사, 풀이 패턴 태깅(`tagPatterns`), 학습 현황 댓글(`postLearningStatus`)               |
+| `pull_request` (`opened`, `reopened`, `synchronize`)       | Week 검사, AI 풀이 분석 check run(`tagPatterns`), 학습 현황 댓글(`postLearningStatus`)       |
 | `issue_comment`, `pull_request_review_comment` (`created`) | `@dalestudy` 멘션에 응답한다. `approve`·`승인` 이면 PR 을 승인하고, 그 밖에는 AI 리뷰를 단다 |
 
 Week 검사는 제목이 `WEEK NN Solutions` 형태인 풀이 PR 만 대상으로 하고, 경고 댓글은 봇이 단 것만 지운다.
@@ -69,7 +69,7 @@ GitHub webhook
 ```
 
 `INTERNAL_SECRET` 과 `WORKER_URL` 이 둘 다 있어야 켜진다. 하나라도 없으면 같은 invocation 에서 차례로 실행된다.
-`tests/subrequest-budget.test.js` 가 파일 5 개 시나리오의 fetch 횟수(`tagPatterns` 20, `postLearningStatus` 31)를 회귀 테스트로 고정한다.
+`tests/subrequest-budget.test.js` 가 fetch 횟수(`tagPatterns` 파일 15 개에 37, `postLearningStatus` 파일 5 개에 31)를 회귀 테스트로 고정한다.
 
 ## 배포와 시크릿
 
@@ -91,7 +91,7 @@ GitHub secret 은 배포할 때마다 Worker secret 으로 들어가므로 `wran
 https://github.com/organizations/DaleStudy/settings/apps/dalestudy
 
 - Webhook URL: `https://github.dalestudy.com/webhooks`, Webhook secret 은 저장소 secret `WEBHOOK_SECRET` 과 같은 값. `/webhooks` 는 서명(`X-Hub-Signature-256`)이 맞지 않거나 `WEBHOOK_SECRET` 이 없으면 받지 않는다
-- Repository permissions: Contents(Read), Issues(Read & write), Metadata(Read), Pull requests(Read & write), Projects(Read & write)
+- Repository permissions: Checks(Read & write), Contents(Read), Issues(Read & write), Metadata(Read), Pull requests(Read & write), Projects(Read & write)
 - 이벤트: Issue comments, Pull request review comments, Projects v2 item, Pull requests
 - DaleStudy 조직에 설치돼 있고 leetcode-study 에 접근할 수 있어야 한다
 

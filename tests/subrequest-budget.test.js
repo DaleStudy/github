@@ -44,7 +44,7 @@ describe("subrequest 예산 — 핸들러별 invocation", () => {
     vi.clearAllMocks();
   });
 
-  it("tagPatterns 는 변경 파일 15개에서 50회 이하 subrequest를 호출한다 (예상 50: files 1 + 리뷰 코멘트 목록 1 + raw 15 + 패턴 OpenAI 15 + 복잡도 OpenAI 1 + POST 15 + 레거시 issue 코멘트 목록 1 + 레거시 DELETE 1)", async () => {
+  it("tagPatterns 는 변경 파일 15개에서 50회 이하 subrequest를 호출한다 (예상 37: files 1 + raw 15 + 패턴 OpenAI 15 + 복잡도 OpenAI 1 + check run 1 + issue 코멘트 목록 1 + PR head 조회 1 + 링크 댓글 POST 1 + 레거시 DELETE 1)", async () => {
     const solutionFiles = makeSolutionFiles(15);
 
     globalThis.fetch = vi.fn().mockImplementation((url, opts) => {
@@ -104,12 +104,16 @@ describe("subrequest 예산 — 핸들러별 invocation", () => {
         });
       }
 
-      if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "GET") {
-        return okJson([]);
+      if (urlStr.endsWith("/check-runs") && method === "POST") {
+        return okJson({ id: 777, html_url: "https://github.com/runs/777" });
       }
 
-      if (urlStr.includes(`/pulls/${PR_NUMBER}/comments`) && method === "POST") {
-        return okJson({ id: 999 });
+      if (urlStr.includes(`/issues/${PR_NUMBER}/comments`) && method === "POST") {
+        return okJson({ id: 500 });
+      }
+
+      if (urlStr.endsWith(`/pulls/${PR_NUMBER}`) && method === "GET") {
+        return okJson({ head: { sha: HEAD_SHA } });
       }
 
       // 레거시 단독 복잡도 issue comment 마이그레이션
@@ -142,8 +146,8 @@ describe("subrequest 예산 — 핸들러별 invocation", () => {
 
     const fetchCount = globalThis.fetch.mock.calls.length;
 
-    expect(result.tagged).toBe(15);
-    expect(fetchCount).toBe(50);
+    expect(result.analyzed).toBe(15);
+    expect(fetchCount).toBe(37);
     expect(fetchCount).toBeLessThanOrEqual(50);
   });
 
