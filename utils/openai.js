@@ -8,10 +8,10 @@ const AI_GATEWAY_ID = "dalestudy";
 
 // 게이트웨이에 재시도를 맡긴다. Worker 안에서 재시도하면 CPU 예산을 깎지만,
 // 엣지에서 재시도하면 응답을 기다리는 시간일 뿐이다.
-const AI_GATEWAY_RETRY_CONFIG = {
-  maxAttempts: 3,
-  retryDelay: 1000,
-  backoff: "exponential",
+const AI_GATEWAY_RETRY_HEADERS = {
+  "cf-aig-max-attempts": 3,
+  "cf-aig-retry-delay": 1000,
+  "cf-aig-backoff": "exponential",
 };
 
 /**
@@ -25,9 +25,8 @@ export async function createChatCompletion(ai, body) {
   const response = await ai.gateway(AI_GATEWAY_ID).run({
     provider: "openai",
     endpoint: "chat/completions",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...AI_GATEWAY_RETRY_HEADERS },
     query: body,
-    config: AI_GATEWAY_RETRY_CONFIG,
   });
 
   if (!response.ok) {

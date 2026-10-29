@@ -561,7 +561,7 @@ function solution() { return 0; }`;
     expect(captured).not.toContain("SC: O(1)");
   });
 
-  it("dalestudy 게이트웨이의 OpenAI chat/completions 로 재시도 설정과 함께 보낸다", async () => {
+  it("dalestudy 게이트웨이의 OpenAI chat/completions 로 재시도 헤더와 함께 보낸다", async () => {
     globalThis.fetch = vi
       .fn()
       .mockResolvedValueOnce(
@@ -578,7 +578,11 @@ function solution() { return 0; }`;
     expect(request).toMatchObject({
       provider: "openai",
       endpoint: "chat/completions",
-      config: { maxAttempts: 3, retryDelay: 1000, backoff: "exponential" },
+      headers: {
+        "cf-aig-max-attempts": 3,
+        "cf-aig-retry-delay": 1000,
+        "cf-aig-backoff": "exponential",
+      },
     });
     // 인증은 바인딩이 하므로 게이트웨이 토큰을 싣지 않는다
     expect(request.headers).not.toHaveProperty("cf-aig-authorization");
