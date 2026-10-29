@@ -11,6 +11,7 @@ import {
   callComplexityAnalysis,
   renderComplexitySection,
 } from "./complexity-analysis.js";
+import { createFakeAi } from "../tests/fakeAi.js";
 
 const PLAIN_SOURCE = "function solution() { return 0; }";
 
@@ -452,6 +453,8 @@ function solution() {}`;
 // ── callComplexityAnalysis ────────────────────────
 
 describe("callComplexityAnalysis", () => {
+  const ai = createFakeAi();
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -471,7 +474,7 @@ describe("callComplexityAnalysis", () => {
       { problemName: "valid-parentheses", content: PLAIN_SOURCE },
     ];
 
-    const results = await callComplexityAnalysis(fileEntries, "fake-key");
+    const results = await callComplexityAnalysis(fileEntries, ai);
 
     expect(results).toHaveLength(2);
     expect(results[0].problemName).toBe("two-sum");
@@ -485,7 +488,7 @@ describe("callComplexityAnalysis", () => {
     await expect(
       callComplexityAnalysis(
         [{ problemName: "two-sum", content: PLAIN_SOURCE }],
-        "fake-key"
+        ai
       )
     ).rejects.toThrow("OpenAI API error");
   });
@@ -498,7 +501,7 @@ describe("callComplexityAnalysis", () => {
     await expect(
       callComplexityAnalysis(
         [{ problemName: "two-sum", content: PLAIN_SOURCE }],
-        "fake-key"
+        ai
       )
     ).rejects.toThrow("Empty response from OpenAI");
   });
@@ -513,7 +516,7 @@ describe("callComplexityAnalysis", () => {
     await expect(
       callComplexityAnalysis(
         [{ problemName: "two-sum", content: PLAIN_SOURCE }],
-        "fake-key"
+        ai
       )
     ).rejects.toThrow("OpenAI returned invalid JSON");
   });
@@ -530,7 +533,7 @@ describe("callComplexityAnalysis", () => {
       { problemName: "longest-prefix", content: PLAIN_SOURCE },
     ];
 
-    const results = await callComplexityAnalysis(fileEntries, "fake-key");
+    const results = await callComplexityAnalysis(fileEntries, ai);
 
     expect(results).toHaveLength(1);
     expect(results[0].problemName).toBe("longest-prefix");
@@ -550,7 +553,7 @@ describe("callComplexityAnalysis", () => {
 function solution() { return 0; }`;
     await callComplexityAnalysis(
       [{ problemName: "two-sum", content: source }],
-      "fake-key"
+      ai
     );
 
     expect(captured).toContain("L1: \nL2: \nL3: function solution()");
@@ -558,24 +561,31 @@ function solution() { return 0; }`;
     expect(captured).not.toContain("SC: O(1)");
   });
 
-  it("AI Gateway 인증 헤더와 재시도 헤더를 함께 보낸다", async () => {
-    let captured = null;
-    globalThis.fetch = vi.fn().mockImplementation(async (url, opts) => {
-      captured = opts.headers;
-      return await makeOpenAIResponse([makeSingleSolutionAnalysis("two-sum")]);
-    });
+  it("dalestudy 게이트웨이의 OpenAI chat/completions 로 재시도 헤더와 함께 보낸다", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        await makeOpenAIResponse([makeSingleSolutionAnalysis("two-sum")])
+      );
 
     await callComplexityAnalysis(
       [{ problemName: "two-sum", content: PLAIN_SOURCE }],
-      "fake-key"
+      ai
     );
 
-    expect(captured).toMatchObject({
-      "cf-aig-authorization": "Bearer fake-key",
-      "cf-aig-max-attempts": "3",
-      "cf-aig-retry-delay": "1000",
-      "cf-aig-backoff": "exponential",
+    expect(ai.gateway).toHaveBeenCalledWith("dalestudy");
+    const request = ai.run.mock.calls[0][0];
+    expect(request).toMatchObject({
+      provider: "openai",
+      endpoint: "chat/completions",
+      headers: {
+        "cf-aig-max-attempts": 3,
+        "cf-aig-retry-delay": 1000,
+        "cf-aig-backoff": "exponential",
+      },
     });
+    // 인증은 바인딩이 하므로 게이트웨이 토큰을 싣지 않는다
+    expect(request.headers).not.toHaveProperty("cf-aig-authorization");
   });
 });
 

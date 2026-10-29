@@ -9,6 +9,10 @@
     "APP_ID": "1067270",
     "WORKER_URL": "https://github.dalestudy.workers.dev",
   },
+  // 같은 계정의 AI Gateway(dalestudy)를 토큰 없이 부른다
+  "ai": {
+    "binding": "AI",
+  },
   "observability": {
     "logs": {
       "enabled": true,

@@ -10,7 +10,7 @@
  *  - LLM : actualTime / actualSpace / feedback / suggestion / headerLine 만 책임.
  */
 
-import { aiGatewayHeaders, OPENAI_CHAT_COMPLETIONS_URL } from "../utils/constants.js";
+import { createChatCompletion } from "../utils/openai.js";
 
 // ── 상수 ──────────────────────────────────────────
 
@@ -242,7 +242,7 @@ export function composeSolution(modelSol, originalContent) {
   };
 }
 
-export async function callComplexityAnalysis(fileEntries, gatewayToken) {
+export async function callComplexityAnalysis(fileEntries, ai) {
   const userPrompt = fileEntries
     .map(
       (f) =>
@@ -250,27 +250,16 @@ export async function callComplexityAnalysis(fileEntries, gatewayToken) {
     )
     .join("\n\n");
 
-  const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: aiGatewayHeaders(gatewayToken),
-    body: JSON.stringify({
-      model: "gpt-5-nano",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 5000,
-      reasoning_effort: "minimal",
-    }),
+  const data = await createChatCompletion(ai, {
+    model: "gpt-5-nano",
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: { type: "json_object" },
+    max_completion_tokens: 5000,
+    reasoning_effort: "minimal",
   });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI API error: ${error}`);
-  }
-
-  const data = await response.json();
   const content = data.choices[0]?.message?.content;
   if (!content) throw new Error("Empty response from OpenAI");
 

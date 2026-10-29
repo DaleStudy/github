@@ -93,7 +93,7 @@ function buildCategoryProgress(categories, solvedProblems) {
  * @param {number} prNumber
  * @param {string} username
  * @param {string} appToken - GitHub App installation token
- * @param {string} openaiApiKey
+ * @param {Ai} ai - Worker 의 AI 바인딩 (env.AI)
  * @returns {Promise<{ skipped: string }|{ analyzed: number, matched: number }>}
  */
 export async function postLearningStatus(
@@ -102,7 +102,7 @@ export async function postLearningStatus(
   prNumber,
   username,
   appToken,
-  openaiApiKey
+  ai
 ) {
   // 1. 문제 카테고리 메타데이터 조회
   const categories = await fetchProblemCategories(repoOwner, repoName, appToken);
@@ -167,7 +167,7 @@ export async function postLearningStatus(
         fileContent,
         submission.problemName,
         problemInfo,
-        openaiApiKey
+        ai
       );
 
       if (analysis.usage) {

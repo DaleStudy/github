@@ -124,7 +124,7 @@ export async function addReactionToComment(
  * @param {string} prTitle - PR 제목
  * @param {string} prBody - PR 본문
  * @param {string} githubToken - GitHub 토큰
- * @param {string} openaiApiKey - OpenAI API 키
+ * @param {Ai} ai - Worker 의 AI 바인딩 (env.AI)
  * @param {string} userRequest - 사용자의 구체적인 요청 (선택사항)
  * @param {number} replyToCommentId - 스레드 답변으로 작성할 댓글 ID (선택사항)
  */
@@ -135,7 +135,7 @@ export async function performAIReview(
   prTitle,
   prBody,
   githubToken,
-  openaiApiKey,
+  ai,
   userRequest = null,
   replyToCommentId = null
 ) {
@@ -156,7 +156,7 @@ export async function performAIReview(
     prDiff,
     prTitle,
     prBody,
-    openaiApiKey,
+    ai,
     userRequest
   );
 

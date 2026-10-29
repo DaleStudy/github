@@ -72,7 +72,7 @@ async function handleTagPatterns(payload, appToken, env) {
     headSha,
     prData,
     appToken,
-    env.AI_GATEWAY_TOKEN
+    env.AI
   );
   return corsResponse({ handler: "tag-patterns", result });
 }
@@ -85,7 +85,7 @@ async function handleLearningStatus(payload, appToken, env) {
     prNumber,
     username,
     appToken,
-    env.AI_GATEWAY_TOKEN
+    env.AI
   );
   return corsResponse({ handler: "learning-status", result });
 }

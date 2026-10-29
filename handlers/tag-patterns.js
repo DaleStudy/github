@@ -35,7 +35,7 @@ const MAX_CHECK_RUN_OUTPUT_LENGTH = 65535;
  * @param {string} headSha - PR head commit SHA
  * @param {object} prData - PR 객체 (draft, labels 포함)
  * @param {string} appToken - GitHub App installation token
- * @param {string} openaiApiKey
+ * @param {Ai} ai - Worker 의 AI 바인딩 (env.AI)
  */
 export async function tagPatterns(
   repoOwner,
@@ -44,7 +44,7 @@ export async function tagPatterns(
   headSha,
   prData,
   appToken,
-  openaiApiKey
+  ai
 ) {
   // 2-1. Skip 조건
   if (prData.draft === true) {
@@ -84,7 +84,7 @@ export async function tagPatterns(
   const fileEntries = await downloadFileEntries(solutionFiles);
 
   // 2-4. 복잡도 분석은 1콜이므로 패턴 루프와 병렬 진행. 실패해도 패턴 분석은 게시.
-  const complexityPromise = callComplexityAnalysis(fileEntries, openaiApiKey)
+  const complexityPromise = callComplexityAnalysis(fileEntries, ai)
     .catch((err) => {
       console.error(`[tagPatterns] complexity analysis failed: ${err.message}`);
       return [];
@@ -97,7 +97,7 @@ export async function tagPatterns(
       const analysis = await generatePatternAnalysis(
         fe.content,
         fe.problemName,
-        openaiApiKey
+        ai
       );
       analyses.push({ fileEntry: fe, analysis });
     } catch (error) {
