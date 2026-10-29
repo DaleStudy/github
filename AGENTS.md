@@ -79,12 +79,14 @@ GitHub webhook
 | ---------------------- | ----------------------------------------------------------------------------------- |
 | `APP_ID`, `WORKER_URL` | `wrangler.jsonc` 의 `vars` (공개 값)                                                |
 | `PRIVATE_KEY`          | GitHub org secret `APP_PRIVATE_KEY`                                                 |
-| `AI_GATEWAY_TOKEN`     | GitHub org secret `AI_GATEWAY_TOKEN`                                                |
+| `AI`                   | `wrangler.jsonc` 의 AI 바인딩. 같은 계정의 AI Gateway `dalestudy` 를 토큰 없이 부른다 |
 | `INTERNAL_SECRET`      | GitHub 저장소 secret `INTERNAL_SECRET`                                              |
 | `WEBHOOK_SECRET`       | GitHub 저장소 secret `WEBHOOK_SECRET`. GitHub App 웹훅 설정의 secret 과 같은 값이다 |
 
 GitHub secret 은 배포할 때마다 Worker secret 으로 들어가므로 `wrangler secret put` 으로 따로 바꾸지 않는다. 다음 배포 때 GitHub 값으로 덮인다.
 로컬에서는 `.dev.vars` 에 같은 이름으로 넣는다. `.dev.vars`, `*.pem` 은 커밋하지 않는다.
+
+OpenAI 키는 Worker 에 두지 않는다. AI Gateway `dalestudy` 의 Provider Keys(BYOK)에 저장돼 있고, 게이트웨이는 BYOK only 라 키가 없으면 Unified Billing 으로 넘어가지 않고 실패한다. AI 바인딩은 `wrangler dev` 에서도 원격 게이트웨이를 부르므로 `wrangler login` 이 dalestudy 계정에 되어 있어야 한다.
 
 ## GitHub App 설정
 

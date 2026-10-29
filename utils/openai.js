@@ -1,7 +1,42 @@
 /**
  * OpenAI API 통합 (AI Gateway 경유)
  */
-import { aiGatewayHeaders, OPENAI_CHAT_COMPLETIONS_URL } from "./constants.js";
+
+// Worker 와 같은 계정에 있는 게이트웨이라 AI 바인딩으로 부르고, 인증 토큰은 쓰지 않는다.
+// OpenAI 키는 게이트웨이에 BYOK 로 저장돼 있다.
+const AI_GATEWAY_ID = "dalestudy";
+
+// 게이트웨이에 재시도를 맡긴다. Worker 안에서 재시도하면 CPU 예산을 깎지만,
+// 엣지에서 재시도하면 응답을 기다리는 시간일 뿐이다.
+const AI_GATEWAY_RETRY_CONFIG = {
+  maxAttempts: 3,
+  retryDelay: 1000,
+  backoff: "exponential",
+};
+
+/**
+ * AI Gateway 를 거쳐 OpenAI Chat Completions 를 호출한다.
+ *
+ * @param {Ai} ai - Worker 의 AI 바인딩 (env.AI)
+ * @param {object} body - Chat Completions 요청 본문
+ * @returns {Promise<object>} 응답 JSON
+ */
+export async function createChatCompletion(ai, body) {
+  const response = await ai.gateway(AI_GATEWAY_ID).run({
+    provider: "openai",
+    endpoint: "chat/completions",
+    headers: { "Content-Type": "application/json" },
+    query: body,
+    config: AI_GATEWAY_RETRY_CONFIG,
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenAI API error: ${error}`);
+  }
+
+  return response.json();
+}
 
 /**
  * PR diff를 분석하여 AI 코드 리뷰 생성
@@ -9,7 +44,7 @@ import { aiGatewayHeaders, OPENAI_CHAT_COMPLETIONS_URL } from "./constants.js";
  * @param {string} prDiff - PR의 diff 내용
  * @param {string} prTitle - PR 제목
  * @param {string} prBody - PR 본문
- * @param {string} gatewayToken - AI Gateway 인증 토큰
+ * @param {Ai} ai - Worker 의 AI 바인딩 (env.AI)
  * @param {string} userRequest - 사용자의 구체적인 요청 (선택사항)
  * @returns {Promise<string>} AI가 생성한 리뷰 댓글 (마크다운)
  */
@@ -17,7 +52,7 @@ export async function generateCodeReview(
   prDiff,
   prTitle,
   prBody,
-  gatewayToken,
+  ai,
   userRequest = null
 ) {
   // userRequest가 있으면 Q&A 모드, 없으면 전체 리뷰 모드
@@ -63,26 +98,15 @@ ${prDiff}
     userPrompt += `\n이 풀 리퀘스트를 리뷰해주세요.`;
   }
 
-  const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: aiGatewayHeaders(gatewayToken),
-    body: JSON.stringify({
-      model: "gpt-5-nano",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      max_completion_tokens: 3000,
-      reasoning_effort: "minimal",
-    }),
+  const data = await createChatCompletion(ai, {
+    model: "gpt-5-nano",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    max_completion_tokens: 3000,
+    reasoning_effort: "minimal",
   });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI API error: ${error}`);
-  }
-
-  const data = await response.json();
   return data.choices[0]?.message?.content || "Failed to generate review";
 }
 
@@ -91,10 +115,10 @@ ${prDiff}
  *
  * @param {string} fileContent - 분석할 소스 코드 내용
  * @param {string} problemName - 문제 이름 (폴더명)
- * @param {string} gatewayToken - AI Gateway 인증 토큰
+ * @param {Ai} ai - Worker 의 AI 바인딩 (env.AI)
  * @returns {Promise<{patterns: string[], description: string}>}
  */
-export async function generatePatternAnalysis(fileContent, problemName, gatewayToken) {
+export async function generatePatternAnalysis(fileContent, problemName, ai) {
   const systemPrompt = `당신은 리트코드 문제 풀이의 알고리즘 패턴을 분석하는 전문가입니다.
 주어진 소스 코드를 분석해서, 다음 패턴 목록 중 해당되는 것만 골라주세요.
 
@@ -138,27 +162,16 @@ ${fileContent}
 
 위 코드에 사용된 알고리즘 패턴을 분석해주세요.`;
 
-  const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: aiGatewayHeaders(gatewayToken),
-    body: JSON.stringify({
-      model: "gpt-5-nano",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 2000,
-      reasoning_effort: "minimal",
-    }),
+  const data = await createChatCompletion(ai, {
+    model: "gpt-5-nano",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: { type: "json_object" },
+    max_completion_tokens: 2000,
+    reasoning_effort: "minimal",
   });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI API error: ${error}`);
-  }
-
-  const data = await response.json();
   const content = data.choices[0]?.message?.content;
 
   if (!content) {
@@ -179,10 +192,10 @@ ${fileContent}
  * @param {string} fileContent - 분석할 소스 코드 내용
  * @param {string} problemName - 문제 이름 (폴더명)
  * @param {{difficulty: string, categories: string[], intended_approach: string}} problemInfo - 문제 메타 정보
- * @param {string} gatewayToken - AI Gateway 인증 토큰
+ * @param {Ai} ai - Worker 의 AI 바인딩 (env.AI)
  * @returns {Promise<{matches: boolean, explanation: string}>}
  */
-export async function generateApproachAnalysis(fileContent, problemName, problemInfo, gatewayToken) {
+export async function generateApproachAnalysis(fileContent, problemName, problemInfo, ai) {
   const systemPrompt = `You are an algorithm analysis expert. Determine if code matches the intended approach.
 
 Respond with a JSON object in this exact format:
@@ -213,27 +226,16 @@ ${truncatedContent}
 
 위 코드가 의도된 접근법과 일치하는지 분석해주세요.`;
 
-  const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: aiGatewayHeaders(gatewayToken),
-    body: JSON.stringify({
-      model: "gpt-5-nano",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 1500,
-      reasoning_effort: "minimal",
-    }),
+  const data = await createChatCompletion(ai, {
+    model: "gpt-5-nano",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: { type: "json_object" },
+    max_completion_tokens: 1500,
+    reasoning_effort: "minimal",
   });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI API error: ${error}`);
-  }
-
-  const data = await response.json();
   const content = data.choices[0]?.message?.content;
 
   if (!content) {

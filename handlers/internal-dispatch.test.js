@@ -17,6 +17,8 @@ import { tagPatterns } from "./tag-patterns.js";
 import { postLearningStatus } from "./learning-status.js";
 import { generateGitHubAppToken } from "../utils/github.js";
 
+const FAKE_AI = { gateway: () => {} };
+
 const VALID_SECRET = "test-secret-123";
 
 function makeRequest(pathname, { secret, body } = {}) {
@@ -88,7 +90,7 @@ describe("handleInternalDispatch — 인증", () => {
 });
 
 describe("handleInternalDispatch — 라우팅", () => {
-  const env = { INTERNAL_SECRET: VALID_SECRET, AI_GATEWAY_TOKEN: "fake-gateway-token" };
+  const env = { INTERNAL_SECRET: VALID_SECRET, AI: FAKE_AI };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -123,7 +125,7 @@ describe("handleInternalDispatch — 라우팅", () => {
       "abc123",
       prData,
       "fake-token",
-      "fake-gateway-token"
+      FAKE_AI
     );
     expect(postLearningStatus).not.toHaveBeenCalled();
   });
@@ -154,7 +156,7 @@ describe("handleInternalDispatch — 라우팅", () => {
       42,
       "testuser",
       "fake-token",
-      "fake-gateway-token"
+      FAKE_AI
     );
     expect(tagPatterns).not.toHaveBeenCalled();
   });
@@ -200,7 +202,7 @@ describe("handleInternalDispatch — 라우팅", () => {
 });
 
 describe("handleInternalDispatch — 에러 처리", () => {
-  const env = { INTERNAL_SECRET: VALID_SECRET, AI_GATEWAY_TOKEN: "fake-gateway-token" };
+  const env = { INTERNAL_SECRET: VALID_SECRET, AI: FAKE_AI };
 
   beforeEach(() => {
     vi.clearAllMocks();

@@ -31,11 +31,9 @@ jobs:
           packageManager: bun
           secrets: |
             PRIVATE_KEY
-            AI_GATEWAY_TOKEN
             INTERNAL_SECRET
             WEBHOOK_SECRET
         env:
           PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
-          AI_GATEWAY_TOKEN: ${{ secrets.AI_GATEWAY_TOKEN }}
           INTERNAL_SECRET: ${{ secrets.INTERNAL_SECRET }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}

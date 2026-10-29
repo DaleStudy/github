@@ -9,13 +9,14 @@ vi.mock("../utils/github.js", () => ({
 }));
 
 import { tagPatterns } from "../handlers/tag-patterns.js";
+import { createFakeAi } from "./fakeAi.js";
 
 const REPO_OWNER = "DaleStudy";
 const REPO_NAME = "leetcode-study";
 const PR_NUMBER = 42;
 const HEAD_SHA = "head-sha";
 const APP_TOKEN = "fake-app-token";
-const OPENAI_KEY = "fake-openai-key";
+const AI = createFakeAi();
 
 const LINK_COMMENT_MARKER = "<!-- dalestudy-ai-analysis-link -->";
 const LEGACY_COMPLEXITY_MARKER = "<!-- dalestudy-complexity-analysis -->";
@@ -69,7 +70,7 @@ function runTagPatterns(prData = makePrData()) {
   return tagPatterns(
     REPO_OWNER, REPO_NAME, PR_NUMBER, HEAD_SHA,
     prData,
-    APP_TOKEN, OPENAI_KEY
+    APP_TOKEN, AI
   );
 }
 

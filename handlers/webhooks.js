@@ -258,7 +258,7 @@ async function handlePullRequestEvent(payload, env, ctx) {
   }
 
   // AI 핸들러들을 별도 Worker 호출로 디스패치 (각각 독립적인 subrequest 예산)
-  if (env.AI_GATEWAY_TOKEN && env.INTERNAL_SECRET && env.WORKER_URL) {
+  if (env.AI && env.INTERNAL_SECRET && env.WORKER_URL) {
     const baseUrl = env.WORKER_URL;
 
     const dispatchHeaders = {
@@ -298,7 +298,7 @@ async function handlePullRequestEvent(payload, env, ctx) {
     );
 
     console.log(`[handlePullRequestEvent] Dispatched 2 AI handlers for PR #${prNumber}`);
-  } else if (env.AI_GATEWAY_TOKEN) {
+  } else if (env.AI) {
     // INTERNAL_SECRET/WORKER_URL 미설정 시 기존 방식으로 폴백 (동일 invocation에서 순차 실행)
     console.warn("[handlePullRequestEvent] INTERNAL_SECRET or WORKER_URL not set, running handlers in-process");
 
@@ -310,14 +310,14 @@ async function handlePullRequestEvent(payload, env, ctx) {
         pr.head.sha,
         pr,
         appToken,
-        env.AI_GATEWAY_TOKEN
+        env.AI
       );
     } catch (error) {
       console.error(`[handlePullRequestEvent] tagPatterns failed: ${error.message}`);
     }
 
     try {
-      await postLearningStatus(repoOwner, repoName, prNumber, pr.user.login, appToken, env.AI_GATEWAY_TOKEN);
+      await postLearningStatus(repoOwner, repoName, prNumber, pr.user.login, appToken, env.AI);
     } catch (error) {
       console.error(`[handlePullRequestEvent] learningStatus failed: ${error.message}`);
     }
@@ -481,9 +481,9 @@ async function handleIssueCommentEvent(payload, env) {
   // AI 코드 리뷰 요청 처리
   console.log(`AI review requested for PR #${prNumber}${mention.userRequest ? ` - Request: ${mention.userRequest}` : ""}`);
 
-  // AI_GATEWAY_TOKEN 확인
-  if (!env.AI_GATEWAY_TOKEN) {
-    console.log("AI_GATEWAY_TOKEN not configured");
+  // AI 바인딩 확인
+  if (!env.AI) {
+    console.log("AI binding not configured");
     return corsResponse({ message: "AI review not configured" });
   }
 
@@ -506,7 +506,7 @@ async function handleIssueCommentEvent(payload, env) {
       issue.title,
       issue.body,
       appToken,
-      env.AI_GATEWAY_TOKEN,
+      env.AI,
       mention.userRequest
     );
 
@@ -551,9 +551,9 @@ async function handlePullRequestReviewCommentEvent(payload, env) {
 
   console.log(`AI review requested for PR #${prNumber} (review comment)${mention.userRequest ? ` - Request: ${mention.userRequest}` : ""}`);
 
-  // AI_GATEWAY_TOKEN 확인
-  if (!env.AI_GATEWAY_TOKEN) {
-    console.log("AI_GATEWAY_TOKEN not configured");
+  // AI 바인딩 확인
+  if (!env.AI) {
+    console.log("AI binding not configured");
     return corsResponse({ message: "AI review not configured" });
   }
 
@@ -579,7 +579,7 @@ async function handlePullRequestReviewCommentEvent(payload, env) {
       pullRequest.title,
       pullRequest.body,
       appToken,
-      env.AI_GATEWAY_TOKEN,
+      env.AI,
       mention.userRequest,
       comment.id  // 스레드 답변으로 작성
     );

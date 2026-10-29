@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { tagPatterns } from "../handlers/tag-patterns.js";
 import { postLearningStatus } from "../handlers/learning-status.js";
+import { createFakeAi } from "./fakeAi.js";
 
 const REPO_OWNER = "DaleStudy";
 const REPO_NAME = "leetcode-study";
@@ -9,7 +10,7 @@ const PR_NUMBER = 42;
 const HEAD_SHA = "head-sha";
 const USERNAME = "testuser";
 const APP_TOKEN = "fake-app-token";
-const OPENAI_KEY = "fake-openai-key";
+const AI = createFakeAi();
 
 function makeSolutionFiles(count) {
   return Array.from({ length: count }, (_, i) => ({
@@ -137,7 +138,7 @@ describe("subrequest 예산 — 핸들러별 invocation", () => {
       HEAD_SHA,
       prData,
       APP_TOKEN,
-      OPENAI_KEY
+      AI
     );
 
     const fetchCount = globalThis.fetch.mock.calls.length;
@@ -258,7 +259,7 @@ describe("subrequest 예산 — 핸들러별 invocation", () => {
       PR_NUMBER,
       USERNAME,
       APP_TOKEN,
-      OPENAI_KEY
+      AI
     );
 
     const fetchCount = globalThis.fetch.mock.calls.length;
