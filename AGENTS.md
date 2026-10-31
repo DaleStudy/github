@@ -54,7 +54,7 @@ wrangler.jsonc  Worker 설정과 공개 값(vars)
 | `pull_request` (`opened`, `reopened`, `synchronize`)       | Week 검사, AI 풀이 분석 check run(`tagPatterns`), 학습 현황 댓글(`postLearningStatus`)       |
 | `issue_comment`, `pull_request_review_comment` (`created`) | `@dalestudy` 멘션에 응답한다. `approve`·`승인` 이면 PR 을 승인하고, 그 밖에는 AI 리뷰를 단다 |
 
-Week 검사는 제목에 `Week 숫자` 또는 `Onboarding`이 포함된 풀이 PR을 대상으로 하고, 경고 댓글은 봇이 단 것만 지운다.
+Week 검사는 제목에 `Week 숫자` 또는 `Onboarding`이 포함된 풀이 PR을 대상으로 하고, 경고 댓글은 봇이 단 것만 지운다. AI 풀이 분석과 학습 현황 댓글은 제목과 상관없이 돌리고(`[user] Onboarding` 같은 PR 도 포함), 풀이 파일이 없으면 두 핸들러가 AI 를 부르지 않고 건너뛴다.
 
 ### AI 작업을 별도 invocation 으로 나누기
 
