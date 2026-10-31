@@ -211,8 +211,11 @@ async function handleProjectsV2ItemEvent(payload, env) {
 
 /**
  * Pull Request 이벤트 처리
- * - opened/reopened: Week 설정 체크 + 알고리즘 패턴 태깅(분석하지 않았거나 변경된 파일만)
- * - synchronize: 알고리즘 패턴 태깅만 (분석하지 않았거나 변경된 파일만, Week 체크 스킵)
+ * - opened/reopened: Week 설정 체크(제목이 WEEK NN 형태인 풀이 PR만) + AI 풀이 분석
+ * - synchronize: AI 풀이 분석만 (Week 체크 스킵)
+ *
+ * AI 풀이 분석과 학습 현황은 제목과 상관없이 돌린다. Onboarding PR 처럼 WEEK 가 없는
+ * 제목에도 풀이 파일이 있을 수 있고, 풀이 파일이 없으면 두 핸들러가 AI 를 부르지 않고 건너뛴다.
  */
 async function handlePullRequestEvent(payload, env, ctx) {
   const action = payload.action;
@@ -230,17 +233,13 @@ async function handlePullRequestEvent(payload, env, ctx) {
   const repoName = payload.repository.name;
   const prNumber = pr.number;
 
-  // 풀이 제출 PR이 아니면 스킵 (early exit - GitHub API 호출 전에)
-  if (!isSolutionPR(pr.title)) {
-    console.log(`Skipping PR #${prNumber}: not a solution PR`);
-    return corsResponse({ message: "Ignored: not a solution PR" });
-  }
-
   const appToken = await generateGitHubAppToken(env);
   let weekValue = null;
 
-  // Week 체크는 opened/reopened일 때만 (synchronize는 이미 설정됐을 가능성 높음)
-  if (action === "opened" || action === "reopened") {
+  // Week 체크는 풀이 PR 이 opened/reopened 일 때만 (synchronize 는 이미 설정됐을 가능성 높음)
+  if (!isSolutionPR(pr.title)) {
+    console.log(`Skipping Week check for PR #${prNumber}: not a WEEK solution PR`);
+  } else if (action === "opened" || action === "reopened") {
     console.log(`New PR ${action}: #${prNumber}`);
 
     // 잠시 대기 후 체크 (프로젝트 추가 시간 고려)

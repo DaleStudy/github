@@ -383,3 +383,52 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
   });
 
 });
+
+describe("handlePullRequestEvent — WEEK 가 없는 제목", () => {
+  const onboardingPayload = {
+    action: "opened",
+    organization: { login: "DaleStudy" },
+    repository: {
+      name: "leetcode-study",
+      owner: { login: "DaleStudy" },
+    },
+    pull_request: {
+      number: 43,
+      title: "[testuser] Onboarding",
+      labels: [],
+      head: { sha: "head-sha" },
+      user: { login: "testuser" },
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({}),
+    });
+  });
+
+  it("Week 체크는 건너뛰지만 AI 핸들러는 디스패치한다", async () => {
+    const ctx = { waitUntil: vi.fn() };
+    const env = {
+      AI: FAKE_AI,
+      INTERNAL_SECRET: "fake-secret",
+      WORKER_URL: "https://worker.test",
+    };
+
+    const response = await handleWebhook(
+      makeRequest("pull_request", onboardingPayload),
+      env,
+      ctx
+    );
+
+    expect(response.status).toBe(200);
+    expect(handleWeekComment).not.toHaveBeenCalled();
+    expect(ctx.waitUntil).toHaveBeenCalledTimes(2);
+
+    const fetchedUrls = globalThis.fetch.mock.calls.map(([url]) => url);
+    expect(fetchedUrls).toContain("https://worker.test/internal/tag-patterns");
+    expect(fetchedUrls).toContain("https://worker.test/internal/learning-status");
+  });
+});
