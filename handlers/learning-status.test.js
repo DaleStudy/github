@@ -1,13 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { postLearningStatus } from "./learning-status.js";
-import {
-  fetchProblemCategories,
-  fetchCohortUserSolutions,
-  fetchPRSubmissions,
-} from "../utils/learningData.js";
-import { generateApproachAnalysis } from "../utils/openai.js";
-import { upsertLearningStatusComment } from "../utils/learningComment.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../utils/learningData.js", () => ({
   fetchProblemCategories: vi.fn(),
@@ -24,9 +15,21 @@ vi.mock("../utils/learningComment.js", async (importOriginal) => ({
   upsertLearningStatusComment: vi.fn(),
 }));
 
-describe("postLearningStatus progress", () => {
+import { postLearningStatus } from "./learning-status.js";
+import {
+  fetchProblemCategories,
+  fetchCohortUserSolutions,
+  fetchPRSubmissions,
+} from "../utils/learningData.js";
+import { generateApproachAnalysis } from "../utils/openai.js";
+import { upsertLearningStatusComment } from "../utils/learningComment.js";
+
+describe("postLearningStatus — 누적 풀이 집계", () => {
+  let originalFetch;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    originalFetch = globalThis.fetch;
     fetchProblemCategories.mockResolvedValue({
       "two-sum": {
         difficulty: "Easy",
@@ -41,40 +44,51 @@ describe("postLearningStatus progress", () => {
       matches: true,
       explanation: "Uses a hash table",
     });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        text: async () => "class Solution: pass",
-      })
-    );
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve("class Solution: pass"),
+    });
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
   });
 
   it.each([
-    { solved: ["two-sum"], expected: 1 },
-    { solved: ["to-lower-case", "two-sum"], expected: 1 },
-    { solved: ["to-lower-case"], expected: 0 },
-  ])(
-    "counts $solved as $expected catalogued problems",
-    async ({ solved, expected }) => {
-      fetchCohortUserSolutions.mockResolvedValue(solved);
+    {
+      name: "등록된 문제의 풀이 수를 유지한다",
+      solved: ["two-sum"],
+      expected: 1,
+    },
+    {
+      name: "미등록 문제가 섞여 있으면 등록된 문제만 집계한다",
+      solved: ["to-lower-case", "two-sum"],
+      expected: 1,
+    },
+    {
+      name: "미등록 문제만 풀었으면 풀이 수는 0이다",
+      solved: ["to-lower-case"],
+      expected: 0,
+    },
+  ])("$name", async ({ solved, expected }) => {
+    fetchCohortUserSolutions.mockResolvedValue(solved);
 
-      await postLearningStatus(
-        "DaleStudy", "leetcode-study", 42, "learner", "token", {}
-      );
+    await postLearningStatus(
+      "DaleStudy",
+      "leetcode-study",
+      42,
+      "learner",
+      "token",
+      {}
+    );
 
-      expect(upsertLearningStatusComment).toHaveBeenCalledWith(
-        "DaleStudy",
-        "leetcode-study",
-        42,
-        expect.stringContaining(`풀이한 문제: ${expected} / 1개`),
-        "token",
-        null
-      );
-    }
-  );
+    expect(upsertLearningStatusComment).toHaveBeenCalledWith(
+      "DaleStudy",
+      "leetcode-study",
+      42,
+      expect.stringContaining(`풀이한 문제: ${expected} / 1개`),
+      "token",
+      null
+    );
+  });
 });

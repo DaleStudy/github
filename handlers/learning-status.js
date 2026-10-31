@@ -112,9 +112,10 @@ export async function postLearningStatus(
   }
 
   // 2. 이번 기수에서 사용자가 제출한 풀이 목록 조회
-  const solvedProblems = (
-    await fetchCohortUserSolutions(repoOwner, repoName, username, appToken)
-  ).filter((problemName) => Object.hasOwn(categories, problemName));
+  const cohortSolutions = await fetchCohortUserSolutions(repoOwner, repoName, username, appToken);
+  const solvedProblems = cohortSolutions.filter((problemName) =>
+    Object.hasOwn(categories, problemName)
+  );
   console.log(
     `[learningStatus] PR #${prNumber}: ${username} has ${solvedProblems.length} solutions in current cohort`
   );
