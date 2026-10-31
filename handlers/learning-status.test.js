@@ -10,11 +10,6 @@ vi.mock("../utils/openai.js", () => ({
   generateApproachAnalysis: vi.fn(),
 }));
 
-vi.mock("../utils/learningComment.js", async (importOriginal) => ({
-  ...(await importOriginal()),
-  upsertLearningStatusComment: vi.fn(),
-}));
-
 import { postLearningStatus } from "./learning-status.js";
 import {
   fetchProblemCategories,
@@ -22,7 +17,6 @@ import {
   fetchPRSubmissions,
 } from "../utils/learningData.js";
 import { generateApproachAnalysis } from "../utils/openai.js";
-import { upsertLearningStatusComment } from "../utils/learningComment.js";
 
 describe("postLearningStatus — 누적 풀이 집계", () => {
   let originalFetch;
@@ -44,10 +38,17 @@ describe("postLearningStatus — 누적 풀이 집계", () => {
       matches: true,
       explanation: "Uses a hash table",
     });
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve("class Solution: pass"),
-    });
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve("class Solution: pass"),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve([]),
+      })
+      .mockResolvedValueOnce({ ok: true });
   });
 
   afterEach(() => {
@@ -82,13 +83,12 @@ describe("postLearningStatus — 누적 풀이 집계", () => {
       {}
     );
 
-    expect(upsertLearningStatusComment).toHaveBeenCalledWith(
-      "DaleStudy",
-      "leetcode-study",
-      42,
-      expect.stringContaining(`풀이한 문제: ${expected} / 1개`),
-      "token",
-      null
+    const post = globalThis.fetch.mock.calls.find(
+      ([, options]) => options?.method === "POST"
     );
+    expect(post).toBeDefined();
+
+    const body = JSON.parse(post[1].body).body;
+    expect(body).toContain(`풀이한 문제: ${expected} / 1개`);
   });
 });
