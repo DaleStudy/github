@@ -10,6 +10,12 @@ describe("isSolutionPR", () => {
     expect(isSolutionPR("[user] WEEK15 Solutions")).toBe(true);
   });
 
+  it("Onboarding이 포함된 제목도 풀이 PR로 인식한다", () => {
+    expect(isSolutionPR("[user] Onboarding")).toBe(true);
+    expect(isSolutionPR("[user] onboarding")).toBe(true);
+    expect(isSolutionPR("[user] ONBOARDING Solutions")).toBe(true);
+  });
+
   it("봇 테스트나 저장소 정리 PR은 제외한다", () => {
     expect(isSolutionPR("260806 봇 댓글 기능 테스트")).toBe(false);
     expect(isSolutionPR("bot test")).toBe(false);
