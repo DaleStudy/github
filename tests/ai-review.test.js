@@ -8,7 +8,7 @@ vi.mock("../utils/github.js", () => ({
   })),
 }));
 
-import { tagPatterns } from "../handlers/tag-patterns.js";
+import { aiReview } from "../handlers/ai-review.js";
 import { createFakeAi } from "./fakeAi.js";
 
 const REPO_OWNER = "DaleStudy";
@@ -20,6 +20,7 @@ const AI = createFakeAi();
 
 const LINK_COMMENT_MARKER = "<!-- dalestudy-ai-analysis-link -->";
 const LEGACY_COMPLEXITY_MARKER = "<!-- dalestudy-complexity-analysis -->";
+const LEGACY_LEARNING_STATUS_MARKER = "<!-- dalestudy-learning-status -->";
 const MAX_FILE_CONTENT_LENGTH = 20000;
 const CHECK_RUN_URL = "https://github.com/DaleStudy/leetcode-study/runs/777";
 
@@ -63,11 +64,11 @@ function makeSolutionFile(problemName, username = "testuser", status = "added") 
 }
 
 function makePrData(overrides = {}) {
-  return { draft: false, labels: [], ...overrides };
+  return { draft: false, labels: [], user: { login: "testuser" }, ...overrides };
 }
 
-function runTagPatterns(prData = makePrData()) {
-  return tagPatterns(
+function runAiReview(prData = makePrData()) {
+  return aiReview(
     REPO_OWNER, REPO_NAME, PR_NUMBER, HEAD_SHA,
     prData,
     APP_TOKEN, AI
@@ -76,7 +77,8 @@ function runTagPatterns(prData = makePrData()) {
 
 /**
  * 두 OpenAI 엔드포인트(패턴 분석 N콜 + 복잡도 분석 1콜)를 분기하고,
- * 쓰기 요청(POST/PATCH/DELETE)은 requests 에 모은다.
+ * GitHub 쓰기 요청(POST/PATCH/DELETE)은 requests 에 모은다.
+ * categories 가 null 이면 problem-categories.json 은 404 다.
  * 복잡도 호출은 system_prompt 에 "시간/공간 복잡도를 분석" 이 포함되는지로 식별.
  */
 function makeFetchMock({
@@ -89,13 +91,21 @@ function makeFetchMock({
   checkRunFails = false,
   existingIssueComments = [],
   latestHeadSha = HEAD_SHA,
+  categories = null,
+  cohortPRs = [],
+  cohortFails = false,
 } = {}) {
   const requests = [];
+  const patternPrompts = [];
   const fetchMock = vi.fn().mockImplementation((url, opts) => {
     const urlStr = typeof url === "string" ? url : url.url;
     const method = opts?.method ?? "GET";
 
-    if (method !== "GET" && !urlStr.includes("/openai/")) {
+    if (
+      method !== "GET" &&
+      !urlStr.includes("/openai/") &&
+      !urlStr.endsWith("/graphql")
+    ) {
       requests.push({
         method,
         url: urlStr,
@@ -109,6 +119,15 @@ function makeFetchMock({
 
     if (urlStr.startsWith("https://raw.example.com/")) {
       return okText(rawContent);
+    }
+
+    if (urlStr.includes("/contents/problem-categories.json")) {
+      return categories ? okJson(categories) : failResponse(404);
+    }
+
+    if (urlStr === "https://api.github.com/graphql") {
+      if (cohortFails) return failResponse(502);
+      return okJson({ data: { search: { nodes: cohortPRs } } });
     }
 
     if (urlStr.includes("/openai/chat/completions")) {
@@ -126,6 +145,7 @@ function makeFetchMock({
         });
       }
       const userPrompt = body.messages[1].content;
+      patternPrompts.push(userPrompt);
       if (failingPatternProblems.some((p) => userPrompt.includes(p))) {
         return failResponse(500);
       }
@@ -165,7 +185,7 @@ function makeFetchMock({
     throw new Error(`Unexpected fetch: ${method} ${urlStr}`);
   });
 
-  return { fetchMock, requests };
+  return { fetchMock, requests, patternPrompts };
 }
 
 function setupFetch(options) {
@@ -194,7 +214,7 @@ function complexityFile(problemName, feedback) {
   };
 }
 
-describe("tagPatterns — skip 조건", () => {
+describe("aiReview — skip 조건", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -202,7 +222,7 @@ describe("tagPatterns — skip 조건", () => {
   it("draft PR 은 skip 한다", async () => {
     globalThis.fetch = vi.fn();
 
-    const result = await runTagPatterns(makePrData({ draft: true }));
+    const result = await runAiReview(makePrData({ draft: true }));
 
     expect(result).toEqual({ skipped: "draft" });
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -215,7 +235,7 @@ describe("tagPatterns — skip 조건", () => {
       ],
     });
 
-    const result = await runTagPatterns();
+    const result = await runAiReview();
 
     expect(result).toEqual({ skipped: "no-solution-files" });
     expect(requests).toHaveLength(0);
@@ -226,14 +246,14 @@ describe("tagPatterns — skip 조건", () => {
       solutionFiles: [makeSolutionFile("two-sum", "testuser", "removed")],
     });
 
-    const result = await runTagPatterns();
+    const result = await runAiReview();
 
     expect(result).toEqual({ skipped: "no-solution-files" });
     expect(requests).toHaveLength(0);
   });
 });
 
-describe("tagPatterns — check run", () => {
+describe("aiReview — check run", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -244,20 +264,20 @@ describe("tagPatterns — check run", () => {
       complexityFiles: [complexityFile("two-sum", "정확합니다!")],
     });
 
-    const result = await runTagPatterns();
+    const result = await runAiReview();
 
     expect(result).toEqual({ analyzed: 1, checkRunUrl: CHECK_RUN_URL });
 
     const checkRun = findCheckRun(requests);
     expect(checkRun).toMatchObject({
-      name: "AI 풀이 분석",
+      name: "AI 리뷰",
       head_sha: HEAD_SHA,
       status: "completed",
       conclusion: "neutral",
     });
-    expect(checkRun.output.title).toBe("풀이 파일 1개 분석");
+    expect(checkRun.output.title).toBe("풀이 1개 리뷰");
     expect(checkRun.output.summary).toContain(
-      "| `two-sum/testuser.js` | Two Pointers |"
+      "| `two-sum/testuser.js` | - | Two Pointers | - |"
     );
     expect(checkRun.output.text).toContain("## `two-sum/testuser.js`");
     expect(checkRun.output.text).toContain("### 🏷️ 알고리즘 패턴 분석");
@@ -272,7 +292,7 @@ describe("tagPatterns — check run", () => {
       solutionFiles: [makeSolutionFile("two-sum")],
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     const { output } = findCheckRun(requests);
     expect(output.text).not.toContain(PLAIN_SOURCE);
@@ -287,7 +307,7 @@ describe("tagPatterns — check run", () => {
         rawContent: "a".repeat(contentLength),
       });
 
-      await runTagPatterns();
+      await runAiReview();
 
       expect(findCheckRun(requests).output.text).not.toContain(
         "앞부분만 분석"
@@ -301,7 +321,7 @@ describe("tagPatterns — check run", () => {
       rawContent: "a".repeat(MAX_FILE_CONTENT_LENGTH + 1),
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     expect(findCheckRun(requests).output.text).toContain(
       `앞부분 ${MAX_FILE_CONTENT_LENGTH}자만 분석했습니다.`
@@ -314,7 +334,7 @@ describe("tagPatterns — check run", () => {
       complexityFails: true,
     });
 
-    const result = await runTagPatterns();
+    const result = await runAiReview();
 
     const { output } = findCheckRun(requests);
     expect(result.analyzed).toBe(1);
@@ -328,7 +348,7 @@ describe("tagPatterns — check run", () => {
       complexityFiles: [],
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     const { output } = findCheckRun(requests);
     expect(output.text).toContain("### 🏷️ 알고리즘 패턴 분석");
@@ -344,16 +364,16 @@ describe("tagPatterns — check run", () => {
       failingPatternProblems: ["valid-parentheses"],
     });
 
-    const result = await runTagPatterns();
+    const result = await runAiReview();
 
     const { output } = findCheckRun(requests);
     expect(result.analyzed).toBe(1);
-    expect(output.title).toBe("풀이 파일 2개 분석");
+    expect(output.title).toBe("풀이 2개 리뷰");
     expect(output.summary).toContain(
-      "| `two-sum/testuser.js` | Two Pointers |"
+      "| `two-sum/testuser.js` | - | Two Pointers | - |"
     );
     expect(output.summary).toContain(
-      "| `valid-parentheses/testuser.js` | ⚠️ 분석 실패 |"
+      "| `valid-parentheses/testuser.js` | - | ⚠️ 분석 실패 | - |"
     );
     expect(output.text).toContain("> ⚠️ 패턴 분석에 실패했습니다.");
   });
@@ -370,7 +390,7 @@ describe("tagPatterns — check run", () => {
       ],
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     const [twoSumSection, validSection] = findCheckRun(requests)
       .output.text.split("## `")
@@ -388,14 +408,14 @@ describe("tagPatterns — check run", () => {
       checkRunFails: true,
     });
 
-    await expect(runTagPatterns()).rejects.toThrow(
+    await expect(runAiReview()).rejects.toThrow(
       "Failed to create check run: 403"
     );
     expect(requests.some((r) => r.url.includes("/issues/"))).toBe(false);
   });
 });
 
-describe("tagPatterns — 대화 탭 링크 댓글", () => {
+describe("aiReview — 대화 탭 링크 댓글", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -405,7 +425,7 @@ describe("tagPatterns — 대화 탭 링크 댓글", () => {
       solutionFiles: [makeSolutionFile("two-sum")],
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     const post = requests.find(
       (r) => r.method === "POST" && r.url.includes(`/issues/${PR_NUMBER}/comments`)
@@ -426,7 +446,7 @@ describe("tagPatterns — 대화 탭 링크 댓글", () => {
       ],
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     const commentWrites = requests.filter((r) => r.url.includes("/issues/"));
     expect(commentWrites).toHaveLength(1);
@@ -452,7 +472,7 @@ describe("tagPatterns — 대화 탭 링크 댓글", () => {
       ],
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     const commentWrites = requests.filter((r) => r.url.includes("/issues/"));
     expect(commentWrites).toHaveLength(1);
@@ -473,7 +493,7 @@ describe("tagPatterns — 대화 탭 링크 댓글", () => {
       ],
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     expect(findCheckRun(requests).head_sha).toBe(HEAD_SHA);
     expect(requests.filter((r) => r.url.includes("/issues/"))).toHaveLength(0);
@@ -491,7 +511,7 @@ describe("tagPatterns — 대화 탭 링크 댓글", () => {
       ],
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     const commentWrites = requests.filter((r) => r.url.includes("/issues/"));
     expect(commentWrites).toHaveLength(1);
@@ -499,7 +519,7 @@ describe("tagPatterns — 대화 탭 링크 댓글", () => {
   });
 });
 
-describe("tagPatterns — 레거시 단독 복잡도 issue comment 마이그레이션", () => {
+describe("aiReview — 레거시 issue comment 마이그레이션", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -508,19 +528,22 @@ describe("tagPatterns — 레거시 단독 복잡도 issue comment 마이그레�
     return requests.filter((r) => r.method === "DELETE");
   }
 
-  it("LEGACY_COMPLEXITY_MARKER 가 있는 Bot issue comment 를 삭제한다", async () => {
+  it.each([
+    LEGACY_COMPLEXITY_MARKER,
+    LEGACY_LEARNING_STATUS_MARKER,
+  ])("%s 가 있는 Bot issue comment 를 삭제한다", async (marker) => {
     const requests = setupFetch({
       solutionFiles: [makeSolutionFile("two-sum")],
       existingIssueComments: [
         {
           id: 1234,
           user: { type: "Bot" },
-          body: `${LEGACY_COMPLEXITY_MARKER}\n레거시`,
+          body: `${marker}\n레거시`,
         },
       ],
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     expect(deletes(requests)).toHaveLength(1);
     expect(deletes(requests)[0].url).toContain("/issues/comments/1234");
@@ -531,7 +554,7 @@ describe("tagPatterns — 레거시 단독 복잡도 issue comment 마이그레�
       solutionFiles: [makeSolutionFile("two-sum")],
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     expect(deletes(requests)).toHaveLength(0);
   });
@@ -548,8 +571,104 @@ describe("tagPatterns — 레거시 단독 복잡도 issue comment 마이그레�
       ],
     });
 
-    await runTagPatterns();
+    await runAiReview();
 
     expect(deletes(requests)).toHaveLength(0);
+  });
+});
+
+describe("aiReview — 의도한 접근과 학습 현황", () => {
+  const CATEGORIES = {
+    "two-sum": {
+      difficulty: "Easy",
+      blindCategories: ["Array"],
+      intended_approach: "Hash Table",
+    },
+    "valid-parentheses": {
+      difficulty: "Easy",
+      blindCategories: ["String"],
+      intended_approach: "Stack",
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function cohortPR(paths, projectTitle = "리트코드 스터디 9기", closed = false) {
+    return {
+      projectsV2: { nodes: [{ title: projectTitle, closed }] },
+      files: { nodes: paths.map((path) => ({ path })) },
+    };
+  }
+
+  it("문제 정보가 있으면 의도한 접근 판단과 학습 현황을 같은 check run 에 담는다", async () => {
+    const { fetchMock, requests, patternPrompts } = makeFetchMock({
+      solutionFiles: [makeSolutionFile("two-sum")],
+      categories: CATEGORIES,
+      cohortPRs: [cohortPR(["two-sum/testuser.js"])],
+      patternResponse: {
+        patterns: ["Hash Map / Hash Set"],
+        description: "해시맵으로 보수를 찾는다",
+        matchesIntendedApproach: true,
+        approachExplanation: "해시 테이블로 한 번에 찾는다",
+      },
+    });
+    globalThis.fetch = fetchMock;
+
+    await runAiReview();
+
+    expect(patternPrompts[0]).toContain("# 의도된 접근법\nHash Table");
+
+    const { output } = findCheckRun(requests);
+    expect(output.title).toBe("풀이 1개 리뷰 · 의도한 접근 1/1");
+    expect(output.summary).toContain(
+      "| `two-sum/testuser.js` | Easy | Hash Map / Hash Set | ✅ 일치 |"
+    );
+    expect(output.summary).toContain("## 📊 testuser 님의 학습 현황");
+    expect(output.summary).toContain("이번 기수에 푼 문제: 1 / 2개");
+    expect(output.text).toContain(
+      "- **의도한 접근** (Hash Table): ✅ 일치 — 해시 테이블로 한 번에 찾는다"
+    );
+  });
+
+  it("문제 정보에 없는 문제는 의도한 접근을 판단하지 않는다", async () => {
+    const { fetchMock, requests, patternPrompts } = makeFetchMock({
+      solutionFiles: [makeSolutionFile("to-lower-case")],
+      categories: CATEGORIES,
+    });
+    globalThis.fetch = fetchMock;
+
+    await runAiReview();
+
+    expect(patternPrompts[0]).not.toContain("# 의도된 접근법");
+    const { output } = findCheckRun(requests);
+    expect(output.title).toBe("풀이 1개 리뷰");
+    expect(output.summary).toContain(
+      "| `to-lower-case/testuser.js` | - | Two Pointers | - |"
+    );
+  });
+
+  it("problem-categories.json 이 없으면 학습 현황 없이 게시한다", async () => {
+    const requests = setupFetch({
+      solutionFiles: [makeSolutionFile("two-sum")],
+    });
+
+    await runAiReview();
+
+    expect(findCheckRun(requests).output.summary).not.toContain("학습 현황");
+  });
+
+  it("기수 풀이 조회가 실패해도 리뷰는 게시한다", async () => {
+    const requests = setupFetch({
+      solutionFiles: [makeSolutionFile("two-sum")],
+      categories: CATEGORIES,
+      cohortFails: true,
+    });
+
+    const result = await runAiReview();
+
+    expect(result.analyzed).toBe(1);
+    expect(findCheckRun(requests).output.summary).not.toContain("학습 현황");
   });
 });

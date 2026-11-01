@@ -1,7 +1,7 @@
 /**
  * 시간/공간 복잡도 분석 (분석 함수 + 순수 헬퍼).
  *
- * 오케스트레이션과 check run 게시는 tag-patterns 핸들러가 담당하며, 이 모듈은
+ * 오케스트레이션과 check run 게시는 ai-review 핸들러가 담당하며, 이 모듈은
  * OpenAI 호출(`callComplexityAnalysis`)과 사용자 주석 처리/매칭 헬퍼,
  * 한 파일분 섹션 렌더러(`renderComplexitySection`)만 제공한다.
  *

@@ -112,12 +112,15 @@ ${prDiff}
 /**
  * 솔루션 파일의 알고리즘 패턴 분석
  *
+ * problemInfo 가 있으면 같은 호출에서 의도된 접근법과 일치하는지도 판단한다.
+ *
  * @param {string} fileContent - 분석할 소스 코드 내용
  * @param {string} problemName - 문제 이름 (폴더명)
+ * @param {{difficulty: string, intended_approach: string}|null} problemInfo - problem-categories.json 의 문제 정보
  * @param {Ai} ai - Worker 의 AI 바인딩 (env.AI)
- * @returns {Promise<{patterns: string[], description: string}>}
+ * @returns {Promise<{patterns: string[], description: string, approach: {matches: boolean, explanation: string}|null}>}
  */
-export async function generatePatternAnalysis(fileContent, problemName, ai) {
+export async function generatePatternAnalysis(fileContent, problemName, problemInfo, ai) {
   const systemPrompt = `당신은 리트코드 문제 풀이의 알고리즘 패턴을 분석하는 전문가입니다.
 주어진 소스 코드를 분석해서, 다음 패턴 목록 중 해당되는 것만 골라주세요.
 
@@ -142,18 +145,28 @@ export async function generatePatternAnalysis(fileContent, problemName, ai) {
 반드시 JSON 객체로만 응답하세요. 형식:
 {
   "patterns": ["패턴1", "패턴2"],
-  "description": "이 코드가 왜 해당 패턴에 속하는지 간단한 한국어 설명 (2-3문장)"
+  "description": "이 코드가 왜 해당 패턴에 속하는지 간단한 한국어 설명 (2-3문장)",
+  "matchesIntendedApproach": true 또는 false,
+  "approachExplanation": "의도된 접근법과 비교한 한국어 1문장"
 }
 
 규칙:
 - patterns는 위 목록의 정확한 이름만 사용
 - 해당 패턴이 없으면 빈 배열
 - 일반적으로 1-3개 패턴이면 충분
-- description은 150자 이내`;
+- description은 150자 이내
+- 의도된 접근법이 주어지지 않으면 matchesIntendedApproach, approachExplanation 은 생략
+- 핵심 자료구조나 알고리즘이 의도된 접근법과 같으면 matchesIntendedApproach=true (완전히 같을 필요는 없음)
+- 최적화된 접근법이 의도됐는데 브루트 포스로 풀었으면 matchesIntendedApproach=false
+- approachExplanation은 80자 이내`;
+
+  const intendedApproach = problemInfo
+    ? `\n# 의도된 접근법\n${problemInfo.intended_approach}\n`
+    : "";
 
   const userPrompt = `# 문제 이름
 ${problemName}
-
+${intendedApproach}
 # 소스 코드
 \`\`\`
 ${fileContent}
@@ -182,75 +195,15 @@ ${fileContent}
   return {
     patterns: Array.isArray(parsed.patterns) ? parsed.patterns : [],
     description: typeof parsed.description === "string" ? parsed.description : "",
+    approach: problemInfo
+      ? {
+          matches: parsed.matchesIntendedApproach === true,
+          explanation:
+            typeof parsed.approachExplanation === "string"
+              ? parsed.approachExplanation
+              : "",
+        }
+      : null,
   };
 }
 
-/**
- * 솔루션 코드가 의도된 알고리즘 접근법과 일치하는지 분석
- *
- * @param {string} fileContent - 분석할 소스 코드 내용
- * @param {string} problemName - 문제 이름 (폴더명)
- * @param {{difficulty: string, categories: string[], intended_approach: string}} problemInfo - 문제 메타 정보
- * @param {Ai} ai - Worker 의 AI 바인딩 (env.AI)
- * @returns {Promise<{matches: boolean, explanation: string}>}
- */
-export async function generateApproachAnalysis(fileContent, problemName, problemInfo, ai) {
-  const systemPrompt = `You are an algorithm analysis expert. Determine if code matches the intended approach.
-
-Respond with a JSON object in this exact format:
-{
-  "matches": true or false,
-  "explanation": "한국어로 1문장, 80자 이내"
-}
-
-Rules:
-- matches=true if the core data structure or algorithm matches the intended approach (does not need to be identical)
-- matches=false if brute force was used when an optimized approach was intended
-- Keep explanation to 1 sentence in Korean, 80 characters or fewer`;
-
-  const truncatedContent = fileContent.slice(0, 15000);
-
-  const userPrompt = `# 문제 이름
-${problemName}
-
-# 문제 정보
-- 난이도: ${problemInfo.difficulty}
-- 카테고리: ${(problemInfo.categories || []).join(", ")}
-- 의도된 접근법: ${problemInfo.intended_approach}
-
-# 소스 코드
-\`\`\`
-${truncatedContent}
-\`\`\`
-
-위 코드가 의도된 접근법과 일치하는지 분석해주세요.`;
-
-  const data = await createChatCompletion(ai, {
-    model: "gpt-5-nano",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    max_completion_tokens: 1500,
-    reasoning_effort: "minimal",
-  });
-  const content = data.choices[0]?.message?.content;
-
-  if (!content) {
-    throw new Error("Empty response from OpenAI");
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw new Error(`OpenAI returned invalid JSON: ${content.slice(0, 200)}`);
-  }
-
-  return {
-    matches: parsed.matches === true,
-    explanation: typeof parsed.explanation === "string" ? parsed.explanation : "",
-    usage: data.usage ?? null,
-  };
-}

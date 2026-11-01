@@ -51,25 +51,26 @@ wrangler.jsonc  Worker 설정과 공개 값(vars)
 | 이벤트                                                     | 하는 일                                                                                      |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `projects_v2_item`                                         | Week 설정이 바뀌면 경고 댓글을 달거나 지운다                                                 |
-| `pull_request` (`opened`, `reopened`, `synchronize`)       | Week 검사, AI 풀이 분석 check run(`tagPatterns`), 학습 현황 댓글(`postLearningStatus`)       |
+| `pull_request` (`opened`, `reopened`, `synchronize`)       | Week 검사, AI 리뷰 check run(`aiReview`)                                                     |
 | `issue_comment`, `pull_request_review_comment` (`created`) | `@dalestudy` 멘션에 응답한다. `approve`·`승인` 이면 PR 을 승인하고, 그 밖에는 AI 리뷰를 단다 |
 
-Week 검사는 제목에 `Week 숫자` 또는 `Onboarding`이 포함된 풀이 PR을 대상으로 하고, 경고 댓글은 봇이 단 것만 지운다. AI 풀이 분석과 학습 현황 댓글은 제목과 상관없이 돌리고(`[user] Onboarding` 같은 PR 도 포함), 풀이 파일이 없으면 두 핸들러가 AI 를 부르지 않고 건너뛴다.
+Week 검사는 제목에 `Week 숫자` 또는 `Onboarding`이 포함된 풀이 PR을 대상으로 하고, 경고 댓글은 봇이 단 것만 지운다. AI 리뷰는 제목과 상관없이 돌리고(`[user] Onboarding` 같은 PR 도 포함), 풀이 파일이 없으면 AI 를 부르지 않고 건너뛴다.
 
-### AI 작업을 별도 invocation 으로 나누기
+AI 리뷰는 풀이 파일별 알고리즘 패턴, 의도한 접근법 일치 여부(`problem-categories.json` 기준), 시간/공간 복잡도와 작성자의 이번 기수 학습 현황을 PR head 커밋의 check run 하나(`AI 리뷰`)에 담는다. 대화 탭에는 그 check run 으로 가는 링크 댓글 하나만 유지한다.
 
-Worker 한 번의 실행(invocation)은 subrequest 를 50 개까지 쓸 수 있다. 파일이 많은 PR 에서 넘치지 않도록, 웹훅 핸들러는 두 AI 작업을 자기 자신에게 다시 요청해 따로 실행한다.
+### AI 리뷰를 별도 invocation 으로 나누기
+
+Worker 한 번의 실행(invocation)은 subrequest 를 50 개까지 쓸 수 있다. 파일이 많은 PR 에서 넘치지 않도록, 웹훅 핸들러는 AI 리뷰를 자기 자신에게 다시 요청해 따로 실행한다.
 
 ```
 GitHub webhook
    ▼
 [#1] webhook 핸들러                       ← 50 예산
-   ├─ ctx.waitUntil(fetch("/internal/tag-patterns"))     → [#2] tagPatterns          ← 독립 50 예산
-   └─ ctx.waitUntil(fetch("/internal/learning-status"))  → [#3] postLearningStatus   ← 독립 50 예산
+   └─ ctx.waitUntil(fetch("/internal/ai-review"))  → [#2] aiReview   ← 독립 50 예산
 ```
 
-`INTERNAL_SECRET` 과 `WORKER_URL` 이 둘 다 있어야 켜진다. 하나라도 없으면 같은 invocation 에서 차례로 실행된다.
-`tests/subrequest-budget.test.js` 가 fetch 횟수(`tagPatterns` 파일 15 개에 37, `postLearningStatus` 파일 5 개에 31)를 회귀 테스트로 고정한다.
+`INTERNAL_SECRET` 과 `WORKER_URL` 이 둘 다 있어야 켜진다. 하나라도 없으면 같은 invocation 에서 실행된다.
+`tests/subrequest-budget.test.js` 가 fetch 횟수(`aiReview` 파일 15 개에 40, AI 호출 포함)를 회귀 테스트로 고정한다.
 
 ## 배포와 시크릿
 
@@ -111,7 +112,6 @@ vi.mock("../utils/github.js", () => ({
 
 - **Workers 런타임이다.** Node.js 모듈과 Octokit 같은 npm 패키지는 대부분 동작하지 않는다. `fetch` 와 Web Crypto API 로 직접 구현한다. Private Key 는 PKCS8, PKCS1 모두 받는다 (`utils/github.js`).
 - **GraphQL 쿼리에 값을 문자열로 직접 끼워 넣는다.** GraphQL 변수 문법을 쓰지 않으므로 입력값 검증을 빠뜨리지 않는다.
-- **댓글 숨김 마커(`<!-- xxx-data: ... -->`)의 직렬화 형식을 바꿀 때는** 정규식, 문서 주석, 테스트를 같은 PR 에서 함께 고친다. 파싱이 빈 값으로 fallback 하면 회귀가 조용히 묻힌다.
 - 응답에는 CORS 헤더(`Access-Control-Allow-Origin: *`)가 붙고, 에러는 500 으로 돌려준다. 원인은 `wrangler tail` 로 본다.
 - 401 이 나면 `APP_ID` 와 `PRIVATE_KEY` 가 같은 App 의 것인지 확인한다.
 
@@ -120,6 +120,5 @@ vi.mock("../utils/github.js", () => ({
 - Node.js 내장 모듈이나 Octokit 같은 Workers 런타임에서 동작하지 않는 패키지를 쓰면 지적한다.
 - GraphQL 쿼리에 문자열로 끼워 넣는 값은 반드시 검증되어야 한다. 사용자 입력(PR 제목, 댓글 등)이 검증 없이 들어가면 심각한 문제로 지적한다.
 - 새 엔드포인트는 기존처럼 `repo_owner`가 `DaleStudy`가 아니면 403을 돌려야 하고, `/internal/*`는 `X-Internal-Secret`을 검사해야 한다.
-- `tagPatterns`나 `postLearningStatus`에 fetch가 늘어나면 `tests/subrequest-budget.test.js`의 고정값도 함께 갱신되어야 한다.
-- 댓글 숨김 마커(`<!-- xxx-data: ... -->`) 형식을 바꾸면 파싱 정규식과 테스트도 같은 PR에서 바뀌어야 한다.
+- `aiReview`에 fetch가 늘어나면 `tests/subrequest-budget.test.js`의 고정값도 함께 갱신되어야 한다.
 - 새 시크릿을 `wrangler secret put` 전제로 추가하면 지적한다. 시크릿은 GitHub secret으로 두고 배포 워크플로가 넣는다.
