@@ -4,17 +4,12 @@ vi.mock("../utils/github.js", () => ({
   generateGitHubAppToken: vi.fn().mockResolvedValue("fake-token"),
 }));
 
-vi.mock("./tag-patterns.js", () => ({
-  tagPatterns: vi.fn().mockResolvedValue({ analyzed: 1 }),
-}));
-
-vi.mock("./learning-status.js", () => ({
-  postLearningStatus: vi.fn().mockResolvedValue({ posted: true }),
+vi.mock("./ai-review.js", () => ({
+  aiReview: vi.fn().mockResolvedValue({ analyzed: 1 }),
 }));
 
 import { handleInternalDispatch } from "./internal-dispatch.js";
-import { tagPatterns } from "./tag-patterns.js";
-import { postLearningStatus } from "./learning-status.js";
+import { aiReview } from "./ai-review.js";
 import { generateGitHubAppToken } from "../utils/github.js";
 
 const FAKE_AI = { gateway: () => {} };
@@ -39,7 +34,7 @@ describe("handleInternalDispatch — 인증", () => {
   });
 
   it("env 에 INTERNAL_SECRET 이 없으면 401 을 반환한다", async () => {
-    const request = makeRequest("/internal/tag-patterns", {
+    const request = makeRequest("/internal/ai-review", {
       secret: "anything",
       body: { repoOwner: "DaleStudy", repoName: "leetcode-study", prNumber: 1 },
     });
@@ -47,33 +42,33 @@ describe("handleInternalDispatch — 인증", () => {
     const response = await handleInternalDispatch(
       request,
       {},
-      "/internal/tag-patterns"
+      "/internal/ai-review"
     );
 
     expect(response.status).toBe(401);
     const body = await response.json();
     expect(body.error).toBe("Unauthorized");
     expect(generateGitHubAppToken).not.toHaveBeenCalled();
-    expect(tagPatterns).not.toHaveBeenCalled();
+    expect(aiReview).not.toHaveBeenCalled();
   });
 
   it("X-Internal-Secret 헤더가 없으면 401 을 반환한다", async () => {
-    const request = makeRequest("/internal/tag-patterns", {
+    const request = makeRequest("/internal/ai-review", {
       body: { repoOwner: "DaleStudy", repoName: "leetcode-study", prNumber: 1 },
     });
 
     const response = await handleInternalDispatch(
       request,
       { INTERNAL_SECRET: VALID_SECRET },
-      "/internal/tag-patterns"
+      "/internal/ai-review"
     );
 
     expect(response.status).toBe(401);
-    expect(tagPatterns).not.toHaveBeenCalled();
+    expect(aiReview).not.toHaveBeenCalled();
   });
 
   it("X-Internal-Secret 헤더가 env.INTERNAL_SECRET 과 일치하지 않으면 401 을 반환한다", async () => {
-    const request = makeRequest("/internal/tag-patterns", {
+    const request = makeRequest("/internal/ai-review", {
       secret: "wrong-secret",
       body: { repoOwner: "DaleStudy", repoName: "leetcode-study", prNumber: 1 },
     });
@@ -81,11 +76,11 @@ describe("handleInternalDispatch — 인증", () => {
     const response = await handleInternalDispatch(
       request,
       { INTERNAL_SECRET: VALID_SECRET },
-      "/internal/tag-patterns"
+      "/internal/ai-review"
     );
 
     expect(response.status).toBe(401);
-    expect(tagPatterns).not.toHaveBeenCalled();
+    expect(aiReview).not.toHaveBeenCalled();
   });
 });
 
@@ -96,9 +91,9 @@ describe("handleInternalDispatch — 라우팅", () => {
     vi.clearAllMocks();
   });
 
-  it("/internal/tag-patterns 요청을 tagPatterns 로 payload 필드와 함께 라우팅한다", async () => {
+  it("/internal/ai-review 요청을 aiReview 로 payload 필드와 함께 라우팅한다", async () => {
     const prData = { number: 42, head: { sha: "abc123" } };
-    const request = makeRequest("/internal/tag-patterns", {
+    const request = makeRequest("/internal/ai-review", {
       secret: VALID_SECRET,
       body: {
         repoOwner: "DaleStudy",
@@ -112,13 +107,13 @@ describe("handleInternalDispatch — 라우팅", () => {
     const response = await handleInternalDispatch(
       request,
       env,
-      "/internal/tag-patterns"
+      "/internal/ai-review"
     );
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.handler).toBe("tag-patterns");
-    expect(tagPatterns).toHaveBeenCalledWith(
+    expect(body.handler).toBe("ai-review");
+    expect(aiReview).toHaveBeenCalledWith(
       "DaleStudy",
       "leetcode-study",
       42,
@@ -127,42 +122,14 @@ describe("handleInternalDispatch — 라우팅", () => {
       "fake-token",
       FAKE_AI
     );
-    expect(postLearningStatus).not.toHaveBeenCalled();
   });
 
-  it("/internal/learning-status 요청을 postLearningStatus 로 payload 필드와 함께 라우팅한다", async () => {
-    const request = makeRequest("/internal/learning-status", {
-      secret: VALID_SECRET,
-      body: {
-        repoOwner: "DaleStudy",
-        repoName: "leetcode-study",
-        prNumber: 42,
-        username: "testuser",
-      },
-    });
-
-    const response = await handleInternalDispatch(
-      request,
-      env,
-      "/internal/learning-status"
-    );
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.handler).toBe("learning-status");
-    expect(postLearningStatus).toHaveBeenCalledWith(
-      "DaleStudy",
-      "leetcode-study",
-      42,
-      "testuser",
-      "fake-token",
-      FAKE_AI
-    );
-    expect(tagPatterns).not.toHaveBeenCalled();
-  });
-
-  it("/internal/complexity-analysis 경로는 더 이상 라우팅되지 않고 404 를 반환한다", async () => {
-    const request = makeRequest("/internal/complexity-analysis", {
+  it.each([
+    "/internal/tag-patterns",
+    "/internal/learning-status",
+    "/internal/complexity-analysis",
+  ])("%s 는 ai-review 로 합쳐져 더 이상 라우팅되지 않고 404 를 반환한다", async (pathname) => {
+    const request = makeRequest(pathname, {
       secret: VALID_SECRET,
       body: {
         repoOwner: "DaleStudy",
@@ -172,15 +139,10 @@ describe("handleInternalDispatch — 라우팅", () => {
       },
     });
 
-    const response = await handleInternalDispatch(
-      request,
-      env,
-      "/internal/complexity-analysis"
-    );
+    const response = await handleInternalDispatch(request, env, pathname);
 
     expect(response.status).toBe(404);
-    expect(tagPatterns).not.toHaveBeenCalled();
-    expect(postLearningStatus).not.toHaveBeenCalled();
+    expect(aiReview).not.toHaveBeenCalled();
   });
 
   it("알 수 없는 /internal/* 경로는 404 를 반환한다", async () => {
@@ -196,8 +158,7 @@ describe("handleInternalDispatch — 라우팅", () => {
     );
 
     expect(response.status).toBe(404);
-    expect(tagPatterns).not.toHaveBeenCalled();
-    expect(postLearningStatus).not.toHaveBeenCalled();
+    expect(aiReview).not.toHaveBeenCalled();
   });
 });
 
@@ -208,10 +169,10 @@ describe("handleInternalDispatch — 에러 처리", () => {
     vi.clearAllMocks();
   });
 
-  it("tagPatterns 핸들러가 throw 하면 500 을 반환한다", async () => {
-    tagPatterns.mockRejectedValueOnce(new Error("boom"));
+  it("aiReview 핸들러가 throw 하면 500 을 반환한다", async () => {
+    aiReview.mockRejectedValueOnce(new Error("boom"));
 
-    const request = makeRequest("/internal/tag-patterns", {
+    const request = makeRequest("/internal/ai-review", {
       secret: VALID_SECRET,
       body: {
         repoOwner: "DaleStudy",
@@ -225,7 +186,7 @@ describe("handleInternalDispatch — 에러 처리", () => {
     const response = await handleInternalDispatch(
       request,
       env,
-      "/internal/tag-patterns"
+      "/internal/ai-review"
     );
 
     expect(response.status).toBe(500);

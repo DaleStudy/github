@@ -24,12 +24,8 @@ vi.mock("../utils/prActions.js", () => ({
   safeJson: vi.fn(),
 }));
 
-vi.mock("./tag-patterns.js", () => ({
-  tagPatterns: vi.fn(),
-}));
-
-vi.mock("./learning-status.js", () => ({
-  postLearningStatus: vi.fn(),
+vi.mock("./ai-review.js", () => ({
+  aiReview: vi.fn(),
 }));
 
 import { handleWebhook } from "./webhooks.js";
@@ -39,8 +35,7 @@ import {
   removeWarningComment,
   handleWeekComment,
 } from "../utils/prWeeks.js";
-import { tagPatterns } from "./tag-patterns.js";
-import { postLearningStatus } from "./learning-status.js";
+import { aiReview } from "./ai-review.js";
 
 const FAKE_AI = { gateway: () => {} };
 
@@ -288,7 +283,7 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     });
   });
 
-  it("AI 바인딩, INTERNAL_SECRET, WORKER_URL 이 모두 설정되면 ctx.waitUntil 로 self-fetch 2 회를 디스패치한다", async () => {
+  it("AI 바인딩, INTERNAL_SECRET, WORKER_URL 이 모두 설정되면 ctx.waitUntil 로 self-fetch 1 회를 디스패치한다", async () => {
     const ctx = makeCtx();
     const env = {
       AI: FAKE_AI,
@@ -303,21 +298,17 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(ctx.waitUntil).toHaveBeenCalledTimes(2);
+    expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
 
     const fetchedUrls = globalThis.fetch.mock.calls.map(([url]) => url);
-    expect(fetchedUrls).toContain("https://worker.test/internal/tag-patterns");
-    expect(fetchedUrls).toContain("https://worker.test/internal/learning-status");
-    // complexity-analysis 는 tag-patterns 에 합본되어 별도 디스패치 없음
-    expect(fetchedUrls).not.toContain("https://worker.test/internal/complexity-analysis");
+    expect(fetchedUrls).toEqual(["https://worker.test/internal/ai-review"]);
 
     const dispatchCall = globalThis.fetch.mock.calls.find(([url]) =>
-      url.endsWith("/internal/tag-patterns")
+      url.endsWith("/internal/ai-review")
     );
     expect(dispatchCall[1].headers["X-Internal-Secret"]).toBe("fake-secret");
 
-    expect(tagPatterns).not.toHaveBeenCalled();
-    expect(postLearningStatus).not.toHaveBeenCalled();
+    expect(aiReview).not.toHaveBeenCalled();
   });
 
   it("INTERNAL_SECRET 이 없으면 in-process 핸들러 호출로 폴백한다", async () => {
@@ -335,10 +326,9 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
 
     expect(response.status).toBe(200);
     expect(ctx.waitUntil).not.toHaveBeenCalled();
-    expect(tagPatterns).toHaveBeenCalledTimes(1);
-    expect(postLearningStatus).toHaveBeenCalledTimes(1);
+    expect(aiReview).toHaveBeenCalledTimes(1);
 
-    const [repoOwner, repoName, prNumber] = tagPatterns.mock.calls[0];
+    const [repoOwner, repoName, prNumber] = aiReview.mock.calls[0];
     expect(repoOwner).toBe("DaleStudy");
     expect(repoName).toBe("leetcode-study");
     expect(prNumber).toBe(42);
@@ -359,8 +349,7 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
 
     expect(response.status).toBe(200);
     expect(ctx.waitUntil).not.toHaveBeenCalled();
-    expect(tagPatterns).toHaveBeenCalledTimes(1);
-    expect(postLearningStatus).toHaveBeenCalledTimes(1);
+    expect(aiReview).toHaveBeenCalledTimes(1);
   });
 
   it("AI 바인딩이 없으면 디스패치도 핸들러 호출도 하지 않는다", async () => {
@@ -378,8 +367,7 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
 
     expect(response.status).toBe(200);
     expect(ctx.waitUntil).not.toHaveBeenCalled();
-    expect(tagPatterns).not.toHaveBeenCalled();
-    expect(postLearningStatus).not.toHaveBeenCalled();
+    expect(aiReview).not.toHaveBeenCalled();
   });
 
 });
@@ -412,7 +400,7 @@ describe("handlePullRequestEvent — WEEK 가 없는 제목", () => {
   it.each([
     ["[testuser] Onboarding", true],
     ["docs: update README", false],
-  ])("%s: Week 검사 여부는 %s이고 AI 핸들러는 디스패치한다", async (title, checksWeek) => {
+  ])("%s: Week 검사 여부는 %s이고 AI 리뷰는 디스패치한다", async (title, checksWeek) => {
     const ctx = { waitUntil: vi.fn() };
     const env = {
       AI: FAKE_AI,
@@ -431,10 +419,9 @@ describe("handlePullRequestEvent — WEEK 가 없는 제목", () => {
 
     expect(response.status).toBe(200);
     expect(handleWeekComment).toHaveBeenCalledTimes(checksWeek ? 1 : 0);
-    expect(ctx.waitUntil).toHaveBeenCalledTimes(2);
+    expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
 
     const fetchedUrls = globalThis.fetch.mock.calls.map(([url]) => url);
-    expect(fetchedUrls).toContain("https://worker.test/internal/tag-patterns");
-    expect(fetchedUrls).toContain("https://worker.test/internal/learning-status");
+    expect(fetchedUrls).toEqual(["https://worker.test/internal/ai-review"]);
   });
 });

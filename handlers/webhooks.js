@@ -21,8 +21,7 @@ import {
 import { ALLOWED_REPO } from "../utils/constants.js";
 import { performAIReview, addReactionToComment } from "../utils/prReview.js";
 import { hasApprovedReview, safeJson } from "../utils/prActions.js";
-import { tagPatterns } from "./tag-patterns.js";
-import { postLearningStatus } from "./learning-status.js";
+import { aiReview } from "./ai-review.js";
 
 /**
  * GitHub webhook 이벤트 처리
@@ -256,53 +255,34 @@ async function handlePullRequestEvent(payload, env, ctx) {
     console.log(`PR synchronized: #${prNumber}`);
   }
 
-  // AI 핸들러들을 별도 Worker 호출로 디스패치 (각각 독립적인 subrequest 예산)
+  // AI 리뷰를 별도 Worker 호출로 디스패치 (독립적인 subrequest 예산)
   if (env.AI && env.INTERNAL_SECRET && env.WORKER_URL) {
-    const baseUrl = env.WORKER_URL;
-
-    const dispatchHeaders = {
-      "Content-Type": "application/json",
-      "X-Internal-Secret": env.INTERNAL_SECRET,
-    };
-
-    const commonPayload = { repoOwner, repoName, prNumber };
-
-    // 패턴 태깅 디스패치
     ctx.waitUntil(
-      fetch(`${baseUrl}/internal/tag-patterns`, {
+      fetch(`${env.WORKER_URL}/internal/ai-review`, {
         method: "POST",
-        headers: dispatchHeaders,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Secret": env.INTERNAL_SECRET,
+        },
         body: JSON.stringify({
-          ...commonPayload,
+          repoOwner,
+          repoName,
+          prNumber,
           headSha: pr.head.sha,
           prData: pr,
         }),
       }).catch((err) =>
-        console.error(`[dispatch] tagPatterns failed: ${err.message}`)
+        console.error(`[dispatch] aiReview failed: ${err.message}`)
       )
     );
 
-    // 학습 현황 디스패치
-    ctx.waitUntil(
-      fetch(`${baseUrl}/internal/learning-status`, {
-        method: "POST",
-        headers: dispatchHeaders,
-        body: JSON.stringify({
-          ...commonPayload,
-          username: pr.user.login,
-        }),
-      }).catch((err) =>
-        console.error(`[dispatch] learningStatus failed: ${err.message}`)
-      )
-    );
-
-    console.log(`[handlePullRequestEvent] Dispatched 2 AI handlers for PR #${prNumber}`);
+    console.log(`[handlePullRequestEvent] Dispatched AI review for PR #${prNumber}`);
   } else if (env.AI) {
-    // INTERNAL_SECRET/WORKER_URL 미설정 시 기존 방식으로 폴백 (동일 invocation에서 순차 실행)
-    console.warn("[handlePullRequestEvent] INTERNAL_SECRET or WORKER_URL not set, running handlers in-process");
+    // INTERNAL_SECRET/WORKER_URL 미설정 시 같은 invocation 에서 실행
+    console.warn("[handlePullRequestEvent] INTERNAL_SECRET or WORKER_URL not set, running AI review in-process");
 
     try {
-      await tagPatterns(
+      await aiReview(
         repoOwner,
         repoName,
         prNumber,
@@ -312,13 +292,7 @@ async function handlePullRequestEvent(payload, env, ctx) {
         env.AI
       );
     } catch (error) {
-      console.error(`[handlePullRequestEvent] tagPatterns failed: ${error.message}`);
-    }
-
-    try {
-      await postLearningStatus(repoOwner, repoName, prNumber, pr.user.login, appToken, env.AI);
-    } catch (error) {
-      console.error(`[handlePullRequestEvent] learningStatus failed: ${error.message}`);
+      console.error(`[handlePullRequestEvent] aiReview failed: ${error.message}`);
     }
   }
 

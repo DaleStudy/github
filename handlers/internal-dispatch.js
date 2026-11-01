@@ -2,14 +2,13 @@
  * 내부 디스패치 핸들러
  *
  * self-fetch를 통해 호출되는 내부 엔드포인트.
- * 각 핸들러가 별도 Worker 호출(invocation)에서 실행되므로
+ * 웹훅 invocation 과 분리된 별도 Worker 호출(invocation)에서 실행되므로
  * 독립적인 subrequest 예산(50)을 갖는다.
  */
 
 import { generateGitHubAppToken } from "../utils/github.js";
 import { errorResponse, corsResponse } from "../utils/cors.js";
-import { tagPatterns } from "./tag-patterns.js";
-import { postLearningStatus } from "./learning-status.js";
+import { aiReview } from "./ai-review.js";
 
 const INTERNAL_HEADER = "X-Internal-Secret";
 
@@ -42,11 +41,8 @@ export async function handleInternalDispatch(request, env, pathname) {
     const appToken = await generateGitHubAppToken(env);
 
     switch (pathname) {
-      case "/internal/tag-patterns":
-        return await handleTagPatterns(payload, appToken, env);
-
-      case "/internal/learning-status":
-        return await handleLearningStatus(payload, appToken, env);
+      case "/internal/ai-review":
+        return await handleAiReview(payload, appToken, env);
 
       default:
         return errorResponse("Not found", 404);
@@ -57,15 +53,9 @@ export async function handleInternalDispatch(request, env, pathname) {
   }
 }
 
-async function handleTagPatterns(payload, appToken, env) {
-  const {
-    repoOwner,
-    repoName,
-    prNumber,
-    headSha,
-    prData,
-  } = payload;
-  const result = await tagPatterns(
+async function handleAiReview(payload, appToken, env) {
+  const { repoOwner, repoName, prNumber, headSha, prData } = payload;
+  const result = await aiReview(
     repoOwner,
     repoName,
     prNumber,
@@ -74,18 +64,5 @@ async function handleTagPatterns(payload, appToken, env) {
     appToken,
     env.AI
   );
-  return corsResponse({ handler: "tag-patterns", result });
-}
-
-async function handleLearningStatus(payload, appToken, env) {
-  const { repoOwner, repoName, prNumber, username } = payload;
-  const result = await postLearningStatus(
-    repoOwner,
-    repoName,
-    prNumber,
-    username,
-    appToken,
-    env.AI
-  );
-  return corsResponse({ handler: "learning-status", result });
+  return corsResponse({ handler: "ai-review", result });
 }
