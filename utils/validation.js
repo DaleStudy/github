@@ -4,9 +4,9 @@
 
 import { ALLOWED_ORG } from "./constants.js";
 
-// "[dale] WEEK 07 Solutions" 같은 풀이 제출 PR 제목.
-// 제목 규칙이 강제되지 않아 "Solutions"를 빼먹는 PR이 있으므로 주차만 확인한다.
-const SOLUTION_TITLE_PATTERN = /week\s*\d+/i;
+// "[dale] WEEK 07 Solutions", "[dale] Onboarding" 같은 풀이 제출 PR 제목.
+// 제목 규칙이 강제되지 않아 "Solutions"를 빼먹는 PR이 있으므로 주차 또는 Onboarding을 확인한다.
+const SOLUTION_TITLE_PATTERN = /week\s*\d+|onboarding/i;
 
 /**
  * Organization 검증

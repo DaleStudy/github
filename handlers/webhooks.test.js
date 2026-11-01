@@ -409,7 +409,10 @@ describe("handlePullRequestEvent — WEEK 가 없는 제목", () => {
     });
   });
 
-  it("Week 체크는 건너뛰지만 AI 핸들러는 디스패치한다", async () => {
+  it.each([
+    ["[testuser] Onboarding", true],
+    ["docs: update README", false],
+  ])("%s: Week 검사 여부는 %s이고 AI 핸들러는 디스패치한다", async (title, checksWeek) => {
     const ctx = { waitUntil: vi.fn() };
     const env = {
       AI: FAKE_AI,
@@ -418,13 +421,16 @@ describe("handlePullRequestEvent — WEEK 가 없는 제목", () => {
     };
 
     const response = await handleWebhook(
-      makeRequest("pull_request", onboardingPayload),
+      makeRequest("pull_request", {
+        ...onboardingPayload,
+        pull_request: { ...onboardingPayload.pull_request, title },
+      }),
       env,
       ctx
     );
 
     expect(response.status).toBe(200);
-    expect(handleWeekComment).not.toHaveBeenCalled();
+    expect(handleWeekComment).toHaveBeenCalledTimes(checksWeek ? 1 : 0);
     expect(ctx.waitUntil).toHaveBeenCalledTimes(2);
 
     const fetchedUrls = globalThis.fetch.mock.calls.map(([url]) => url);
