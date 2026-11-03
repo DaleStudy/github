@@ -649,6 +649,30 @@ describe("aiReview — 의도한 접근과 학습 현황", () => {
     );
   });
 
+  it("패턴 목록을 통째로 돌려주면 감지된 패턴 없음으로 표시한다", async () => {
+    const { fetchMock, requests } = makeFetchMock({
+      solutionFiles: [makeSolutionFile("to-lower-case")],
+      patternResponse: {
+        patterns: [
+          "Bit Manipulation",
+          "Greedy",
+          "Hash Map / Hash Set",
+          "Two Pointers",
+          "Dynamic Programming",
+          "Dynamic Programming",
+        ],
+        description: "알고리즘 패턴으로 분류하기 어렵다",
+      },
+    });
+    globalThis.fetch = fetchMock;
+
+    await runAiReview();
+
+    expect(findCheckRun(requests).output.summary).toContain(
+      "| `to-lower-case/testuser.js` | - | 감지된 패턴 없음 | - |"
+    );
+  });
+
   it("problem-categories.json 이 없으면 학습 현황 없이 게시한다", async () => {
     const requests = setupFetch({
       solutionFiles: [makeSolutionFile("two-sum")],
