@@ -211,16 +211,18 @@ async function handleProjectsV2ItemEvent(payload, env) {
 /**
  * Pull Request 이벤트 처리
  * - opened/reopened: Week 설정 체크(제목이 WEEK NN 형태인 풀이 PR만) + AI 풀이 분석
- * - synchronize: AI 풀이 분석만 (Week 체크 스킵)
+ * - synchronize, ready_for_review: AI 풀이 분석만 (Week 체크 스킵)
  *
  * AI 풀이 분석과 학습 현황은 제목과 상관없이 돌린다. Onboarding PR 처럼 WEEK 가 없는
  * 제목에도 풀이 파일이 있을 수 있고, 풀이 파일이 없으면 두 핸들러가 AI 를 부르지 않고 건너뛴다.
+ * draft PR 은 AI 풀이 분석이 건너뛰므로, draft 가 풀리는 ready_for_review 에서 분석한다.
  */
 async function handlePullRequestEvent(payload, env, ctx) {
   const action = payload.action;
 
-  // opened, reopened, synchronize 액션만 처리
-  if (!["opened", "reopened", "synchronize"].includes(action)) {
+  if (
+    !["opened", "reopened", "synchronize", "ready_for_review"].includes(action)
+  ) {
     console.log(`Ignoring pull_request action: ${action}`);
     return corsResponse({ message: `Ignored: ${action}` });
   }

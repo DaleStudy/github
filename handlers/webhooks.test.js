@@ -311,6 +311,28 @@ describe("handlePullRequestEvent — AI 핸들러 디스패치", () => {
     expect(aiReview).not.toHaveBeenCalled();
   });
 
+  it("draft 에서 ready_for_review 로 바뀌면 AI 리뷰를 디스패치한다", async () => {
+    const ctx = makeCtx();
+    const env = {
+      AI: FAKE_AI,
+      INTERNAL_SECRET: "fake-secret",
+      WORKER_URL: "https://worker.test",
+    };
+
+    const response = await handleWebhook(
+      makeRequest("pull_request", {
+        ...basePRPayload,
+        action: "ready_for_review",
+      }),
+      env,
+      ctx
+    );
+
+    expect(response.status).toBe(200);
+    const fetchedUrls = globalThis.fetch.mock.calls.map(([url]) => url);
+    expect(fetchedUrls).toEqual(["https://worker.test/internal/ai-review"]);
+  });
+
   it("INTERNAL_SECRET 이 없으면 in-process 핸들러 호출로 폴백한다", async () => {
     const ctx = makeCtx();
     const env = {
