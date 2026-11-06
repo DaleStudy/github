@@ -47,11 +47,6 @@ export function stripComplexityComments(content) {
     .join("\n");
 }
 
-export function extractBigO(line) {
-  const m = line.match(BIG_O_LITERAL_PATTERN);
-  return m ? m[0] : null;
-}
-
 function isCommentLine(line) {
   const trimmed = line.trim();
   if (trimmed === "") return false;
@@ -63,20 +58,56 @@ function isClassWrapperLine(line) {
 }
 
 /**
+ * 키워드에서 가장 가까운 Big-O 리터럴을 고른다.
+ * "Time O(n), Space O(1)" 처럼 한 줄에 둘 다 적혀 있어도 각 키워드에 맞는 값을 얻는다.
+ */
+export function extractBigONear(line, keywordPattern) {
+  const keyword = line.match(keywordPattern);
+  if (!keyword) return null;
+  const keywordStart = keyword.index;
+  const keywordEnd = keywordStart + keyword[0].length;
+  const distance = (literal) =>
+    literal.index >= keywordEnd
+      ? literal.index - keywordEnd
+      : Math.max(0, keywordStart - (literal.index + literal[0].length));
+
+  let nearest = null;
+  for (const literal of line.matchAll(
+    new RegExp(BIG_O_LITERAL_PATTERN.source, "g")
+  )) {
+    if (nearest === null || distance(literal) < distance(nearest)) {
+      nearest = literal;
+    }
+  }
+  return nearest ? nearest[0] : null;
+}
+
+/**
  * 헤더 라인 위쪽으로 빈 줄 또는 비-주석 라인을 만나기 전까지의 연속 주석 블록에서
  * 시간/공간 복잡도 주석을 추출한다.
  *
  * 단, 외곽 클래스/struct/impl 선언 라인(예: `class Solution:`)은 투명하게 통과한다.
  * Python LeetCode 풀이처럼 사용자 주석이 클래스 선언 위에 있고, 모델이 메서드 라인을
  * headerLine 으로 반환하는 흔한 패턴을 지원하기 위함.
+ *
+ * 프롬프트가 클래스 라인도 headerLine 으로 허용하므로, headerLine 이 클래스 선언이면
+ * 클래스 바로 안쪽(메서드 위) 주석 블록도 본다.
  */
 export function extractUserAnnotations(content, headerLine) {
-  if (!Number.isInteger(headerLine) || headerLine <= 1) {
-    return { userTime: null, userSpace: null };
-  }
+  const found = { userTime: null, userSpace: null };
+  if (!Number.isInteger(headerLine) || headerLine < 1) return found;
+
   const lines = content.split("\n");
-  let userTime = null;
-  let userSpace = null;
+  const collect = (line) => {
+    if (found.userTime === null) {
+      found.userTime = extractBigONear(line, TIME_KEYWORD_PATTERN);
+    }
+    if (found.userSpace === null) {
+      found.userSpace = extractBigONear(line, SPACE_KEYWORD_PATTERN);
+    }
+    return found.userTime !== null && found.userSpace !== null;
+  };
+
   for (let i = headerLine - 2; i >= 0; i--) {
     const line = lines[i];
     if (line === undefined) break;
@@ -87,18 +118,15 @@ export function extractUserAnnotations(content, headerLine) {
     }
 
     if (!isCommentLine(line)) break;
-
-    if (userTime === null && TIME_KEYWORD_PATTERN.test(line)) {
-      const bigO = extractBigO(line);
-      if (bigO) userTime = bigO;
-    }
-    if (userSpace === null && SPACE_KEYWORD_PATTERN.test(line)) {
-      const bigO = extractBigO(line);
-      if (bigO) userSpace = bigO;
-    }
-    if (userTime !== null && userSpace !== null) break;
+    if (collect(line)) return found;
   }
-  return { userTime, userSpace };
+
+  if (isClassWrapperLine(lines[headerLine - 1])) {
+    for (let i = headerLine; i < lines.length && isCommentLine(lines[i]); i++) {
+      if (collect(lines[i])) break;
+    }
+  }
+  return found;
 }
 
 /**

@@ -109,6 +109,39 @@ ${prDiff}
   return data.choices[0]?.message?.content || "Failed to generate review";
 }
 
+const ALGORITHM_PATTERNS = [
+  "Two Pointers",
+  "Sliding Window",
+  "Fast & Slow Pointers",
+  "BFS",
+  "DFS",
+  "Backtracking",
+  "Dynamic Programming",
+  "Binary Search",
+  "Monotonic Stack",
+  "Heap / Priority Queue",
+  "Hash Map / Hash Set",
+  "Greedy",
+  "Divide and Conquer",
+  "Union Find",
+  "Trie",
+  "Bit Manipulation",
+];
+
+const MAX_PATTERNS = 3;
+
+/**
+ * 모델이 돌려준 패턴에서 목록에 없는 이름과 중복을 걸러낸다.
+ * 상한을 넘으면 패턴 목록을 그대로 베낀 응답이므로 하나도 믿지 않는다.
+ */
+export function sanitizePatterns(patterns) {
+  if (!Array.isArray(patterns)) return [];
+  const known = [...new Set(patterns)].filter((p) =>
+    ALGORITHM_PATTERNS.includes(p)
+  );
+  return known.length > MAX_PATTERNS ? [] : known;
+}
+
 /**
  * 솔루션 파일의 알고리즘 패턴 분석
  *
@@ -125,22 +158,7 @@ export async function generatePatternAnalysis(fileContent, problemName, problemI
 주어진 소스 코드를 분석해서, 다음 패턴 목록 중 해당되는 것만 골라주세요.
 
 감지 대상 패턴:
-- Two Pointers
-- Sliding Window
-- Fast & Slow Pointers
-- BFS
-- DFS
-- Backtracking
-- Dynamic Programming
-- Binary Search
-- Monotonic Stack
-- Heap / Priority Queue
-- Hash Map / Hash Set
-- Greedy
-- Divide and Conquer
-- Union Find
-- Trie
-- Bit Manipulation
+${ALGORITHM_PATTERNS.map((p) => `- ${p}`).join("\n")}
 
 반드시 JSON 객체로만 응답하세요. 형식:
 {
@@ -152,11 +170,12 @@ export async function generatePatternAnalysis(fileContent, problemName, problemI
 
 규칙:
 - patterns는 위 목록의 정확한 이름만 사용
-- 해당 패턴이 없으면 빈 배열
-- 일반적으로 1-3개 패턴이면 충분
+- 코드의 핵심 아이디어인 패턴만 최대 ${MAX_PATTERNS}개. 목록을 훑어 조금이라도 관련 있는 것을 모두 고르지 마세요
+- 단순 순회, 내장 함수 호출, 문자열 변환처럼 목록의 어느 패턴에도 해당하지 않으면 빈 배열
 - description은 150자 이내
 - 의도된 접근법이 주어지지 않으면 matchesIntendedApproach, approachExplanation 은 생략
 - 핵심 자료구조나 알고리즘이 의도된 접근법과 같으면 matchesIntendedApproach=true (완전히 같을 필요는 없음)
+- 의도된 접근법이 내장 함수 사용이나 단순 순회여서 패턴이 없어도, 코드가 그렇게 풀었으면 matchesIntendedApproach=true
 - 최적화된 접근법이 의도됐는데 브루트 포스로 풀었으면 matchesIntendedApproach=false
 - approachExplanation은 80자 이내`;
 
@@ -193,7 +212,7 @@ ${fileContent}
   const parsed = JSON.parse(content);
 
   return {
-    patterns: Array.isArray(parsed.patterns) ? parsed.patterns : [],
+    patterns: sanitizePatterns(parsed.patterns),
     description: typeof parsed.description === "string" ? parsed.description : "",
     approach: problemInfo
       ? {

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   isComplexityCommentLine,
   stripComplexityComments,
-  extractBigO,
+  extractBigONear,
   extractUserAnnotations,
   bigOEquals,
   cleanBigO,
@@ -124,21 +124,37 @@ function solution() {}`);
   });
 });
 
-describe("extractBigO", () => {
+describe("extractBigONear", () => {
+  const TIME = /\b(?:TC|tc|Time|time)\b|시간\s*복잡도/;
+  const SPACE = /\b(?:SC|sc|Space|space)\b|공간\s*복잡도/;
+
   it("기본 형태 인식", () => {
-    expect(extractBigO("// TC: O(n)")).toBe("O(n)");
-    expect(extractBigO("// SC: O(n^2)")).toBe("O(n^2)");
-    expect(extractBigO("# 시간 복잡도: O(n log n)")).toBe("O(n log n)");
+    expect(extractBigONear("// TC: O(n)", TIME)).toBe("O(n)");
+    expect(extractBigONear("// SC: O(n^2)", SPACE)).toBe("O(n^2)");
+    expect(extractBigONear("# 시간 복잡도: O(n log n)", TIME)).toBe("O(n log n)");
   });
 
   it("괄호 안 파라미터 형태도 인식", () => {
-    expect(extractBigO("// O(n*m)")).toBe("O(n*m)");
-    expect(extractBigO("// O(V + E)")).toBe("O(V + E)");
-    expect(extractBigO("// O(2^n)")).toBe("O(2^n)");
+    expect(extractBigONear("// TC: O(n*m)", TIME)).toBe("O(n*m)");
+    expect(extractBigONear("// TC: O(V + E)", TIME)).toBe("O(V + E)");
+    expect(extractBigONear("// TC: O(2^n)", TIME)).toBe("O(2^n)");
   });
 
-  it("Big-O 가 없으면 null", () => {
-    expect(extractBigO("// 알고리즘 설명")).toBe(null);
+  it("한 줄에 시간과 공간이 함께 있으면 각 키워드에 가까운 값을 고른다", () => {
+    const line = "# Time O(n), Space O(1)";
+    expect(extractBigONear(line, TIME)).toBe("O(n)");
+    expect(extractBigONear(line, SPACE)).toBe("O(1)");
+  });
+
+  it("Big-O 가 키워드 앞에 있어도 가까운 값을 고른다", () => {
+    const line = "// O(n) time, O(1) space";
+    expect(extractBigONear(line, TIME)).toBe("O(n)");
+    expect(extractBigONear(line, SPACE)).toBe("O(1)");
+  });
+
+  it("키워드나 Big-O 가 없으면 null", () => {
+    expect(extractBigONear("// 알고리즘 설명", TIME)).toBe(null);
+    expect(extractBigONear("// TC: 선형", TIME)).toBe(null);
   });
 });
 
@@ -298,6 +314,28 @@ impl Solution {
     expect(extractUserAnnotations(src, 4)).toEqual({
       userTime: "O(m * n)",
       userSpace: "O(m * n)",
+    });
+  });
+
+  it("headerLine 이 클래스 선언이면 클래스 안쪽 주석에서 추출한다", () => {
+    const src = `class Solution:
+    # Python 문자열은 immutable이라 대문자만 선택적으로 수정 불가
+    # lower()를 쓰면 한번 순회하므로 가장 간단 Time O(n), Space O(1)
+    def toLowerCase(self, s: str) -> str:
+        return s.lower()`;
+    expect(extractUserAnnotations(src, 1)).toEqual({
+      userTime: "O(n)",
+      userSpace: "O(1)",
+    });
+  });
+
+  it("headerLine 이 클래스 선언이 아니면 아래쪽 주석을 보지 않는다", () => {
+    const src = `function solution() {
+  // TC: O(n)
+}`;
+    expect(extractUserAnnotations(src, 1)).toEqual({
+      userTime: null,
+      userSpace: null,
     });
   });
 
