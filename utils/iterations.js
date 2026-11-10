@@ -11,6 +11,8 @@ import { ALLOWED_ORG } from "./constants.js";
 
 const COHORT_TITLE_PATTERN = /^리트코드 스터디 (\d+)기$/;
 const WEEK_TITLE_PATTERN = /^Week (\d+)$/;
+// 기수 첫 주차 앞의 온보딩 주간. 0주차로 보고 Week 1 앞에 둔다 (릴리즈 태그 v{기수}.0.0)
+const ONBOARDING_TITLE = "Onboarding";
 const WEEK_FIELD_NAME = "Week";
 
 /**
@@ -37,11 +39,15 @@ export function parseCohort(title) {
 }
 
 /**
- * Iteration 제목에서 주차 번호 추출 ("Week 7" → 7)
+ * Iteration 제목에서 주차 번호 추출 ("Week 7" → 7, "Onboarding" → 0)
  *
  * @returns {number|null}
  */
 export function parseWeek(title) {
+  if (title === ONBOARDING_TITLE) {
+    return 0;
+  }
+
   const matched = WEEK_TITLE_PATTERN.exec(title ?? "");
   return matched ? Number(matched[1]) : null;
 }

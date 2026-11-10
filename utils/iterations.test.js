@@ -53,9 +53,14 @@ describe("parseWeek", () => {
     expect(parseWeek("Week 15")).toBe(15);
   });
 
+  it("Onboarding은 0주차로 본다", () => {
+    expect(parseWeek("Onboarding")).toBe(0);
+  });
+
   it("형식이 다르면 null을 돌려준다", () => {
     expect(parseWeek("Week 7(current)")).toBeNull();
     expect(parseWeek("Sprint 3")).toBeNull();
+    expect(parseWeek("onboarding")).toBeNull();
     expect(parseWeek(null)).toBeNull();
   });
 });
@@ -121,6 +126,28 @@ describe("findCoveringIteration", () => {
     });
     // 기수 사이 휴식기
     expect(findCoveringIteration(acrossCohorts, "2026-10-10")).toBeNull();
+  });
+
+  it("완료된 Onboarding iteration도 0주차로 판정한다", () => {
+    const withOnboarding = [
+      {
+        number: 30,
+        title: "리트코드 스터디 9기",
+        cohort: 9,
+        iterations: [
+          iteration("Week 1", "2026-11-09"),
+          iteration("Onboarding", "2026-11-02"),
+        ],
+      },
+    ];
+
+    expect(findCoveringIteration(withOnboarding, "2026-11-07")).toMatchObject({
+      cohort: 9,
+      week: 0,
+      weekLabel: "Onboarding",
+      startDate: "2026-11-02",
+      endDate: "2026-11-08",
+    });
   });
 
   it("Week 형식이 아닌 iteration은 무시한다", () => {

@@ -42,7 +42,7 @@ wrangler.jsonc  Worker 설정과 공개 값(vars)
 
 승인·병합의 공통 규칙은 `utils/prActions.js` 에 있다. 요약하면 Week 가 다르거나 Status 가 `Solving` 인 PR, Draft PR 은 건너뛰고, 승인은 CI 가 통과한 PR 에만, 병합은 승인 리뷰가 있고 `mergeable_state` 가 `clean` 인 PR 에만 한다.
 
-`/resolve-iteration` 이 있는 이유: Actions 의 기본 `GITHUB_TOKEN` 은 org 프로젝트 보드를 읽지 못해서(`read:project` 없음) App 토큰을 가진 이 Worker 가 대신 읽는다. 주차는 보드의 Week(Iteration) 필드에서 오므로 하드코딩하지 않는다.
+`/resolve-iteration` 이 있는 이유: Actions 의 기본 `GITHUB_TOKEN` 은 org 프로젝트 보드를 읽지 못해서(`read:project` 없음) App 토큰을 가진 이 Worker 가 대신 읽는다. 주차는 보드의 Week(Iteration) 필드에서 오므로 하드코딩하지 않는다. `Onboarding` iteration 은 0주차(`week: 0`, 릴리즈 태그 `v{기수}.0.0`)로 본다.
 
 ## 웹훅
 
