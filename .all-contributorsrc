@@ -67,11 +67,21 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "liza0525",
+      "name": "Yunyoung Chung (Lizzie)",
+      "avatar_url": "https://avatars.githubusercontent.com/u/52642281?v=4",
+      "profile": "https://lizziechung.com",
+      "contributions": [
+        "bug"
+      ]
     }
   ],
   "contributorsPerLine": 7,
   "linkToUsage": false,
   "files": [
     "README.md"
-  ]
+  ],
+  "commitType": "docs"
 }
