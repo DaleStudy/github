@@ -174,11 +174,7 @@ const SYSTEM_PROMPT = `당신은 알고리즘 풀이의 시간/공간 복잡도�
 - **재귀 호출 스택**은 반드시 포함합니다. 재귀 깊이가 d 이면 최소 O(d).
   예: 균형 트리 DFS 는 O(log n)~O(h), 편향 가능한 트리/선형 재귀는 O(n).
 - 호출하는 **표준 라이브러리의 내부 공간**도 포함합니다. 새 변수를 선언하지 않았다는 이유로 O(1) 로 판정하지 마세요.
-  - C++ \`std::sort\`: O(log n) (introsort 재귀 스택). \`std::stable_sort\`: O(n).
-  - Java \`Arrays.sort\`(primitive): O(log n). \`Arrays.sort\`/\`Collections.sort\`(객체): O(n).
-  - Python \`list.sort()\`/\`sorted()\`: O(n) (Timsort).
-  - JavaScript/TypeScript \`Array.prototype.sort\`: O(n) 으로 간주 (V8 TimSort).
-  - Go \`sort.Slice\`/\`slices.Sort\`: O(log n).
+  예: C++ \`std::sort\` 는 재귀 스택으로 O(log n), Python \`sorted()\` 는 O(n).
 - 문자열 슬라이싱/복사, \`split\`, 스프레드 등 숨은 할당도 포함합니다.
 
 # problemName
