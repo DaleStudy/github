@@ -29,14 +29,14 @@ wrangler.jsonc  Worker 설정과 공개 값(vars)
 
 ## 엔드포인트
 
-`repo_owner` 를 받는 엔드포인트는 `DaleStudy` 가 아니면 403 이다 (생략하면 `DaleStudy`). `/check-weeks` 는 저장소도 leetcode-study 만 받는다.
+`repo_owner` 를 받는 엔드포인트는 `DaleStudy` 가 아니면 403 이다. 일괄 승인·병합 요청에는 `repo_owner`가 필수다. `/check-weeks` 는 생략하면 `DaleStudy`를 사용하며 저장소도 leetcode-study 만 받는다.
 
 | 경로                      | 하는 일                                                                                                         |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `POST /webhooks`          | GitHub App 웹훅 수신 (아래 "웹훅")                                                                              |
 | `POST /check-weeks`       | 열린 PR 전체의 Week 설정을 검사해 경고 댓글을 달거나 지운다. `{ "repo_name" }`                                  |
-| `POST /approve-prs`       | 해당 주차 풀이 PR 을 일괄 승인한다. `{ "repo_name", "week": "Week 8", "excludes"? }`                            |
-| `POST /merge-prs`         | 해당 주차의 승인된 PR 을 일괄 병합한다. `{ "repo_name", "week", "excludes"?, "merge_method"? }` (기본 `squash`) |
+| `POST /approve-prs`       | 해당 주차 풀이 PR 을 일괄 승인한다. `{ "repo_owner", "repo_name", "week": "Week 8", "excludes"? }`                            |
+| `POST /merge-prs`         | 해당 주차의 승인된 PR 을 일괄 병합한다. `{ "repo_owner", "repo_name", "week", "excludes"?, "merge_method"? }` (기본 `squash`) |
 | `POST /resolve-iteration` | 날짜가 몇 기 몇 주차인지 프로젝트 보드에서 읽는다. `{ "date": "2026-08-08" }`                                   |
 | `POST /internal/*`        | 웹훅 핸들러가 AI 작업을 별도 invocation 으로 넘길 때 쓴다 (`X-Internal-Secret` 인증)                            |
 
