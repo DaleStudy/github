@@ -286,7 +286,17 @@ fi
 section "Tier 4: 수동 검증 (아래 명령을 직접 실행하세요)"
 
 echo ""
-echo "  일괄 승인·병합은 DaleStudy/leetcode-study의 Actions → Management에서 실행합니다."
+echo -e "  ${YELLOW}[approve-prs]${NC} PR 일괄 승인 (Week 번호를 실제 값으로 변경)"
+echo "  curl -X POST $BASE_URL/approve-prs \\"
+echo "    -H 'Content-Type: application/json' \\"
+echo "    -d '{\"repo_owner\":\"<저장소 소유자>\",\"repo_name\":\"leetcode-study\",\"week\":\"Week 14\"}'"
+
+echo ""
+echo -e "  ${YELLOW}[merge-prs]${NC} PR 일괄 병합"
+echo "  curl -X POST $BASE_URL/merge-prs \\"
+echo "    -H 'Content-Type: application/json' \\"
+echo "    -d '{\"repo_owner\":\"<저장소 소유자>\",\"repo_name\":\"leetcode-study\",\"week\":\"Week 14\",\"merge_method\":\"squash\"}'"
+
 echo ""
 echo -e "  ${YELLOW}[Webhook]${NC} 실제 이벤트로 검증"
 echo "  1. wrangler tail  (로그 모니터링 시작)"
