@@ -16,9 +16,16 @@ const PASSING_CHECK_STATE = "SUCCESS";
 export async function parsePrActionPayload(request) {
   try {
     const data = await request.json();
-    const repoOwner = data.repo_owner || "DaleStudy";
+    const repoOwner = data.repo_owner;
     const repoName = data.repo_name;
     const week = data.week;
+
+    if (!repoOwner) {
+      return {
+        valid: false,
+        response: errorResponse("Missing required field: repo_owner", 400),
+      };
+    }
 
     if (!repoName) {
       return {

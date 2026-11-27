@@ -110,7 +110,7 @@ fi
 # 1.6 approve-prs week 누락 (400)
 BODY=$(curl -s -w '\n%{http_code}' -X POST "$BASE_URL/approve-prs" \
   -H "Content-Type: application/json" \
-  -d '{"repo_name":"leetcode-study"}' --max-time 30 2>/dev/null)
+  -d '{"repo_owner":"DaleStudy","repo_name":"leetcode-study"}' --max-time 30 2>/dev/null)
 STATUS=$(echo "$BODY" | tail -1)
 BODY_CONTENT=$(echo "$BODY" | sed '$d')
 if [ "$STATUS" = "400" ] && echo "$BODY_CONTENT" | grep -q "week"; then
@@ -122,7 +122,7 @@ fi
 # 1.7 merge-prs week 누락 (400)
 BODY=$(curl -s -w '\n%{http_code}' -X POST "$BASE_URL/merge-prs" \
   -H "Content-Type: application/json" \
-  -d '{"repo_name":"leetcode-study"}' --max-time 30 2>/dev/null)
+  -d '{"repo_owner":"DaleStudy","repo_name":"leetcode-study"}' --max-time 30 2>/dev/null)
 STATUS=$(echo "$BODY" | tail -1)
 BODY_CONTENT=$(echo "$BODY" | sed '$d')
 if [ "$STATUS" = "400" ] && echo "$BODY_CONTENT" | grep -q "week"; then
@@ -134,7 +134,7 @@ fi
 # 1.8 경로 별칭 (underscore)
 BODY=$(curl -s -w '\n%{http_code}' -X POST "$BASE_URL/approve_prs" \
   -H "Content-Type: application/json" \
-  -d '{"repo_name":"leetcode-study"}' --max-time 30 2>/dev/null)
+  -d '{"repo_owner":"DaleStudy","repo_name":"leetcode-study"}' --max-time 30 2>/dev/null)
 STATUS=$(echo "$BODY" | tail -1)
 if [ "$STATUS" = "400" ]; then
   pass "1.8 /approve_prs 경로 별칭 라우팅"
@@ -289,13 +289,13 @@ echo ""
 echo -e "  ${YELLOW}[approve-prs]${NC} PR 일괄 승인 (Week 번호를 실제 값으로 변경)"
 echo "  curl -X POST $BASE_URL/approve-prs \\"
 echo "    -H 'Content-Type: application/json' \\"
-echo "    -d '{\"repo_name\":\"leetcode-study\",\"week\":\"Week 14\"}'"
+echo "    -d '{\"repo_owner\":\"<저장소 소유자>\",\"repo_name\":\"leetcode-study\",\"week\":\"Week 14\"}'"
 
 echo ""
 echo -e "  ${YELLOW}[merge-prs]${NC} PR 일괄 병합"
 echo "  curl -X POST $BASE_URL/merge-prs \\"
 echo "    -H 'Content-Type: application/json' \\"
-echo "    -d '{\"repo_name\":\"leetcode-study\",\"week\":\"Week 14\",\"merge_method\":\"squash\"}'"
+echo "    -d '{\"repo_owner\":\"<저장소 소유자>\",\"repo_name\":\"leetcode-study\",\"week\":\"Week 14\",\"merge_method\":\"squash\"}'"
 
 echo ""
 echo -e "  ${YELLOW}[Webhook]${NC} 실제 이벤트로 검증"
